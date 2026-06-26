@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"errors"
-	"keenye_practice/app/internal/domain"
+	"keeneye_practice/app/internal/domain"
 )
 
 type StudentServiceImpl struct {

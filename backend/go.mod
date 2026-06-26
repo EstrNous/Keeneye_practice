@@ -1,4 +1,4 @@
-module keenye_practice
+module keeneye_practice
 
 go 1.26
 

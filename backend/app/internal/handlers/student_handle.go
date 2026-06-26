@@ -4,8 +4,9 @@ import (
 	"net/http"
 	"strconv"
 
+	"keeneye_practice/app/internal/domain"
+
 	"github.com/gin-gonic/gin"
-	"keenye_practice/app/internal/domain"
 )
 
 type StudentHandler struct {

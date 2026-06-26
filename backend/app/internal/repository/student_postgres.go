@@ -2,8 +2,8 @@ package repository
 
 import (
 	"context"
-	"keenye_practice/app/internal/db"
-	"keenye_practice/app/internal/domain"
+	"keeneye_practice/app/internal/db"
+	"keeneye_practice/app/internal/domain"
 )
 
 type PostgresStudentRepository struct {

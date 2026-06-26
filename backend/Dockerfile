@@ -9,7 +9,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /keenye_app ./app/cmd/server/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /keeneye_app ./app/cmd/server/main.go
 
 FROM alpine:3.19
 
@@ -17,7 +17,7 @@ RUN apk update && apk add --no-cache tzdata curl
 
 WORKDIR /root/
 
-COPY --from=builder /keenye_app .
+COPY --from=builder /keeneye_app .
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
