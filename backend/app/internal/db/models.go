@@ -4,9 +4,84 @@
 
 package db
 
+import (
+	"database/sql/driver"
+	"fmt"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type UserRole string
+
+const (
+	UserRoleStudent UserRole = "student"
+	UserRoleTeacher UserRole = "teacher"
+	UserRoleAdmin   UserRole = "admin"
+)
+
+func (e *UserRole) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = UserRole(s)
+	case string:
+		*e = UserRole(s)
+	default:
+		return fmt.Errorf("unsupported scan type for UserRole: %T", src)
+	}
+	return nil
+}
+
+type NullUserRole struct {
+	UserRole UserRole
+	Valid    bool // Valid is true if UserRole is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullUserRole) Scan(value interface{}) error {
+	if value == nil {
+		ns.UserRole, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.UserRole.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullUserRole) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.UserRole), nil
+}
+
+type Group struct {
+	ID   int32
+	Name string
+}
+
 type Student struct {
-	ID              int64
-	Fio             string
-	GroupOfStudents string
-	PhoneNumber     string
+	ID          int32
+	Fio         string
+	PhoneNumber string
+	UserID      pgtype.Int4
+	GroupID     pgtype.Int4
+}
+
+type Teacher struct {
+	ID     int32
+	UserID pgtype.Int4
+	Fio    string
+}
+
+type TeacherGroup struct {
+	TeacherID int32
+	GroupID   int32
+}
+
+type User struct {
+	ID           int32
+	Email        string
+	PasswordHash string
+	Role         UserRole
+	CreatedAt    pgtype.Timestamp
 }

@@ -7,147 +7,353 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createStudent = `-- name: CreateStudent :one
-INSERT INTO students (fio, group_of_students, phone_number)
-VALUES ($1, $2, $3)
-    RETURNING id, fio, group_of_students, phone_number
+const assignTeacherToGroup = `-- name: AssignTeacherToGroup :exec
+INSERT INTO teacher_groups (teacher_id, group_id) VALUES ($1, $2) ON CONFLICT DO NOTHING
 `
 
-type CreateStudentParams struct {
-	Fio             string
-	GroupOfStudents string
-	PhoneNumber     string
+type AssignTeacherToGroupParams struct {
+	TeacherID int32
+	GroupID   int32
 }
 
-func (q *Queries) CreateStudent(ctx context.Context, arg CreateStudentParams) (Student, error) {
-	row := q.db.QueryRow(ctx, createStudent, arg.Fio, arg.GroupOfStudents, arg.PhoneNumber)
-	var i Student
-	err := row.Scan(
-		&i.ID,
-		&i.Fio,
-		&i.GroupOfStudents,
-		&i.PhoneNumber,
-	)
-	return i, err
-}
-
-const deleteStudent = `-- name: DeleteStudent :exec
-DELETE FROM students
-WHERE id = $1
-`
-
-func (q *Queries) DeleteStudent(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, deleteStudent, id)
+func (q *Queries) AssignTeacherToGroup(ctx context.Context, arg AssignTeacherToGroupParams) error {
+	_, err := q.db.Exec(ctx, assignTeacherToGroup, arg.TeacherID, arg.GroupID)
 	return err
 }
 
-const getStudent = `-- name: GetStudent :one
-SELECT id, fio, group_of_students, phone_number FROM students
-WHERE id = $1 LIMIT 1
+const checkTeacherHasGroup = `-- name: CheckTeacherHasGroup :one
+SELECT EXISTS(
+    SELECT 1 FROM teacher_groups
+    WHERE teacher_id = $1 AND group_id = $2
+)
 `
 
-func (q *Queries) GetStudent(ctx context.Context, id int64) (Student, error) {
-	row := q.db.QueryRow(ctx, getStudent, id)
-	var i Student
-	err := row.Scan(
-		&i.ID,
-		&i.Fio,
-		&i.GroupOfStudents,
-		&i.PhoneNumber,
-	)
-	return i, err
+type CheckTeacherHasGroupParams struct {
+	TeacherID int32
+	GroupID   int32
 }
 
-const listStudents = `-- name: ListStudents :many
-SELECT id, fio, group_of_students, phone_number FROM students
-ORDER BY id
+func (q *Queries) CheckTeacherHasGroup(ctx context.Context, arg CheckTeacherHasGroupParams) (bool, error) {
+	row := q.db.QueryRow(ctx, checkTeacherHasGroup, arg.TeacherID, arg.GroupID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const createStudent = `-- name: CreateStudent :one
+INSERT INTO students (user_id, group_id, fio, phone_number)
+VALUES ($1, $2, $3, $4) RETURNING id, fio, phone_number, user_id, group_id
 `
 
-func (q *Queries) ListStudents(ctx context.Context) ([]Student, error) {
-	rows, err := q.db.Query(ctx, listStudents)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Student
-	for rows.Next() {
-		var i Student
-		if err := rows.Scan(
-			&i.ID,
-			&i.Fio,
-			&i.GroupOfStudents,
-			&i.PhoneNumber,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+type CreateStudentParams struct {
+	UserID      pgtype.Int4
+	GroupID     pgtype.Int4
+	Fio         string
+	PhoneNumber string
 }
 
-const listStudentsByGroup = `-- name: ListStudentsByGroup :many
-SELECT id, fio, group_of_students, phone_number FROM students
-WHERE group_of_students = $1
-ORDER BY fio
-`
-
-func (q *Queries) ListStudentsByGroup(ctx context.Context, groupOfStudents string) ([]Student, error) {
-	rows, err := q.db.Query(ctx, listStudentsByGroup, groupOfStudents)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Student
-	for rows.Next() {
-		var i Student
-		if err := rows.Scan(
-			&i.ID,
-			&i.Fio,
-			&i.GroupOfStudents,
-			&i.PhoneNumber,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const updateStudent = `-- name: UpdateStudent :one
-UPDATE students
-SET fio = $2, group_of_students = $3, phone_number = $4
-WHERE id = $1
-    RETURNING id, fio, group_of_students, phone_number
-`
-
-type UpdateStudentParams struct {
-	ID              int64
-	Fio             string
-	GroupOfStudents string
-	PhoneNumber     string
-}
-
-func (q *Queries) UpdateStudent(ctx context.Context, arg UpdateStudentParams) (Student, error) {
-	row := q.db.QueryRow(ctx, updateStudent,
-		arg.ID,
+func (q *Queries) CreateStudent(ctx context.Context, arg CreateStudentParams) (Student, error) {
+	row := q.db.QueryRow(ctx, createStudent,
+		arg.UserID,
+		arg.GroupID,
 		arg.Fio,
-		arg.GroupOfStudents,
 		arg.PhoneNumber,
 	)
 	var i Student
 	err := row.Scan(
 		&i.ID,
 		&i.Fio,
-		&i.GroupOfStudents,
 		&i.PhoneNumber,
+		&i.UserID,
+		&i.GroupID,
 	)
 	return i, err
+}
+
+const createTeacher = `-- name: CreateTeacher :one
+INSERT INTO teachers (user_id, fio) VALUES ($1, $2) RETURNING id, user_id, fio
+`
+
+type CreateTeacherParams struct {
+	UserID pgtype.Int4
+	Fio    string
+}
+
+func (q *Queries) CreateTeacher(ctx context.Context, arg CreateTeacherParams) (Teacher, error) {
+	row := q.db.QueryRow(ctx, createTeacher, arg.UserID, arg.Fio)
+	var i Teacher
+	err := row.Scan(&i.ID, &i.UserID, &i.Fio)
+	return i, err
+}
+
+const createUser = `-- name: CreateUser :one
+INSERT INTO users (email, password_hash, role)
+VALUES ($1, $2, $3) RETURNING id, email, password_hash, role, created_at
+`
+
+type CreateUserParams struct {
+	Email        string
+	PasswordHash string
+	Role         UserRole
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.PasswordHash, arg.Role)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deleteStudent = `-- name: DeleteStudent :exec
+DELETE FROM students WHERE id = $1
+`
+
+func (q *Queries) DeleteStudent(ctx context.Context, id int32) error {
+	_, err := q.db.Exec(ctx, deleteStudent, id)
+	return err
+}
+
+const getClassmates = `-- name: GetClassmates :many
+SELECT s.id, s.fio, s.phone_number, s.user_id, s.group_id, g.name as group_name FROM students s
+                                          LEFT JOIN groups g ON s.group_id = g.id
+WHERE s.group_id = (SELECT group_id FROM students as s WHERE s.id = $1)
+`
+
+type GetClassmatesRow struct {
+	ID          int32
+	Fio         string
+	PhoneNumber string
+	UserID      pgtype.Int4
+	GroupID     pgtype.Int4
+	GroupName   pgtype.Text
+}
+
+func (q *Queries) GetClassmates(ctx context.Context, id int32) ([]GetClassmatesRow, error) {
+	rows, err := q.db.Query(ctx, getClassmates, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetClassmatesRow
+	for rows.Next() {
+		var i GetClassmatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Fio,
+			&i.PhoneNumber,
+			&i.UserID,
+			&i.GroupID,
+			&i.GroupName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getStudentByID = `-- name: GetStudentByID :one
+SELECT s.id, s.fio, s.phone_number, s.user_id, s.group_id, g.name as group_name FROM students s
+                                          LEFT JOIN groups g ON s.group_id = g.id
+WHERE s.id = $1 LIMIT 1
+`
+
+type GetStudentByIDRow struct {
+	ID          int32
+	Fio         string
+	PhoneNumber string
+	UserID      pgtype.Int4
+	GroupID     pgtype.Int4
+	GroupName   pgtype.Text
+}
+
+func (q *Queries) GetStudentByID(ctx context.Context, id int32) (GetStudentByIDRow, error) {
+	row := q.db.QueryRow(ctx, getStudentByID, id)
+	var i GetStudentByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Fio,
+		&i.PhoneNumber,
+		&i.UserID,
+		&i.GroupID,
+		&i.GroupName,
+	)
+	return i, err
+}
+
+const getStudentByUserID = `-- name: GetStudentByUserID :one
+SELECT id, fio, phone_number, user_id, group_id FROM students WHERE user_id = $1 LIMIT 1
+`
+
+func (q *Queries) GetStudentByUserID(ctx context.Context, userID pgtype.Int4) (Student, error) {
+	row := q.db.QueryRow(ctx, getStudentByUserID, userID)
+	var i Student
+	err := row.Scan(
+		&i.ID,
+		&i.Fio,
+		&i.PhoneNumber,
+		&i.UserID,
+		&i.GroupID,
+	)
+	return i, err
+}
+
+const getStudentsByTeacherGroups = `-- name: GetStudentsByTeacherGroups :many
+SELECT s.id, s.fio, s.phone_number, s.user_id, s.group_id, g.name as group_name FROM students s
+                                          JOIN groups g ON s.group_id = g.id
+                                          JOIN teacher_groups tg ON tg.group_id = s.group_id
+WHERE tg.teacher_id = $1
+`
+
+type GetStudentsByTeacherGroupsRow struct {
+	ID          int32
+	Fio         string
+	PhoneNumber string
+	UserID      pgtype.Int4
+	GroupID     pgtype.Int4
+	GroupName   string
+}
+
+func (q *Queries) GetStudentsByTeacherGroups(ctx context.Context, teacherID int32) ([]GetStudentsByTeacherGroupsRow, error) {
+	rows, err := q.db.Query(ctx, getStudentsByTeacherGroups, teacherID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetStudentsByTeacherGroupsRow
+	for rows.Next() {
+		var i GetStudentsByTeacherGroupsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Fio,
+			&i.PhoneNumber,
+			&i.UserID,
+			&i.GroupID,
+			&i.GroupName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getTeacherByUserID = `-- name: GetTeacherByUserID :one
+SELECT id, user_id, fio FROM teachers WHERE user_id = $1 LIMIT 1
+`
+
+func (q *Queries) GetTeacherByUserID(ctx context.Context, userID pgtype.Int4) (Teacher, error) {
+	row := q.db.QueryRow(ctx, getTeacherByUserID, userID)
+	var i Teacher
+	err := row.Scan(&i.ID, &i.UserID, &i.Fio)
+	return i, err
+}
+
+const getUserByEmail = `-- name: GetUserByEmail :one
+SELECT id, email, password_hash, role, created_at FROM users WHERE email = $1 LIMIT 1
+`
+
+func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByEmail, email)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const listAllStudents = `-- name: ListAllStudents :many
+SELECT s.id, s.fio, s.phone_number, s.user_id, s.group_id, g.name as group_name FROM students s
+                                          LEFT JOIN groups g ON s.group_id = g.id
+`
+
+type ListAllStudentsRow struct {
+	ID          int32
+	Fio         string
+	PhoneNumber string
+	UserID      pgtype.Int4
+	GroupID     pgtype.Int4
+	GroupName   pgtype.Text
+}
+
+func (q *Queries) ListAllStudents(ctx context.Context) ([]ListAllStudentsRow, error) {
+	rows, err := q.db.Query(ctx, listAllStudents)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllStudentsRow
+	for rows.Next() {
+		var i ListAllStudentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Fio,
+			&i.PhoneNumber,
+			&i.UserID,
+			&i.GroupID,
+			&i.GroupName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const removeTeacherFromGroup = `-- name: RemoveTeacherFromGroup :exec
+DELETE FROM teacher_groups WHERE teacher_id = $1 AND group_id = $2
+`
+
+type RemoveTeacherFromGroupParams struct {
+	TeacherID int32
+	GroupID   int32
+}
+
+func (q *Queries) RemoveTeacherFromGroup(ctx context.Context, arg RemoveTeacherFromGroupParams) error {
+	_, err := q.db.Exec(ctx, removeTeacherFromGroup, arg.TeacherID, arg.GroupID)
+	return err
+}
+
+const updateStudent = `-- name: UpdateStudent :exec
+UPDATE students SET group_id = $2, fio = $3, phone_number = $4 WHERE id = $1
+`
+
+type UpdateStudentParams struct {
+	ID          int32
+	GroupID     pgtype.Int4
+	Fio         string
+	PhoneNumber string
+}
+
+func (q *Queries) UpdateStudent(ctx context.Context, arg UpdateStudentParams) error {
+	_, err := q.db.Exec(ctx, updateStudent,
+		arg.ID,
+		arg.GroupID,
+		arg.Fio,
+		arg.PhoneNumber,
+	)
+	return err
 }
