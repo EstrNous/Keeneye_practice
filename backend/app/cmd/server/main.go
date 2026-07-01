@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"keeneye_practice/app/internal/domain"
-	"keeneye_practice/migrations"
 	"log"
 	"log/slog"
 	"net/http"
@@ -16,8 +14,10 @@ import (
 
 	"keeneye_practice/app/internal/db"
 	"keeneye_practice/app/internal/handlers"
+	"keeneye_practice/app/internal/middleware" // Новый импорт
 	"keeneye_practice/app/internal/repository"
 	"keeneye_practice/app/internal/service"
+	"keeneye_practice/migrations"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -67,23 +67,29 @@ func main() {
 	}
 
 	log.Println("Проверка и накат миграций...")
-	// Передаем сюда именно migrationDB вместо dbPool
 	if err := goose.Up(migrationDB, "."); err != nil {
 		log.Fatalf("Ошибка применения миграций: %v", err)
 	}
 	log.Println("Миграции успешно применены!")
 
 	queries := db.New(dbPool)
+
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = "super-secret-local-key"
+	}
+
+	authSvc := service.NewAuthService(queries, dbPool, jwtSecret)
+	authHandler := handlers.NewAuthHandler(authSvc)
 	studentRepo := repository.NewPostgresStudentRepository(queries)
 	studentSvc := service.NewStudentService(studentRepo)
 	studentHandler := handlers.NewStudentHandler(studentSvc)
-
-	seedDatabase(ctx, studentRepo, logger)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
 
+	// Логирование HTTP запросов
 	r.Use(func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
@@ -91,15 +97,19 @@ func main() {
 		logger.Info("HTTP Request", "method", c.Request.Method, "path", path, "status", c.Writer.Status(), "latency", time.Since(start).String())
 	})
 
-	api := r.Group("/api/base")
+	auth := r.Group("/api/auth")
 	{
-		api.GET("/check", studentHandler.Check)
-		api.GET("/students", studentHandler.GetAll)
-		api.GET("/students/:id", studentHandler.GetByID)
-		api.GET("/students/filter", studentHandler.FilterByGroup)
-		api.POST("/students", studentHandler.Create)
-		api.PUT("/students", studentHandler.Update)
-		api.DELETE("/students/:id", studentHandler.Delete)
+		auth.POST("/login", authHandler.Login)
+	}
+
+	api := r.Group("/api/base")
+	api.Use(middleware.AuthMiddleware(jwtSecret))
+	{
+		api.GET("/students", middleware.RequireRoles("admin", "teacher", "student"), studentHandler.GetAll)
+		api.GET("/students/:id", middleware.RequireRoles("admin", "teacher", "student"), studentHandler.GetByID)
+		api.PUT("/students", middleware.RequireRoles("admin", "teacher", "student"), studentHandler.Update)
+
+		api.DELETE("/students/:id", middleware.RequireRoles("admin"), studentHandler.Delete)
 	}
 
 	r.GET("/healthz", func(c *gin.Context) {
@@ -129,13 +139,4 @@ func main() {
 		logger.Error("Forced shutdown enforced", "error", err)
 	}
 	logger.Info("Application stopped cleanly")
-}
-
-func seedDatabase(ctx context.Context, repo domain.StudentRepository, l *slog.Logger) {
-	list, err := repo.List(ctx)
-	if err == nil && len(list) == 0 {
-		l.Info("Executing Database Seed...")
-		_, _ = repo.Create(ctx, &domain.Student{Fio: "Иванов Иван Иванович", Group: "ПИНЖ-41", PhoneNumber: "+79991112233"})
-		_, _ = repo.Create(ctx, &domain.Student{Fio: "Петров Петр Петрович", Group: "КРИНЖ-31", PhoneNumber: "+79994445566"})
-	}
 }
