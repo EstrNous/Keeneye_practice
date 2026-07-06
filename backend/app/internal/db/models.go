@@ -33,10 +33,9 @@ func (e *UserRole) Scan(src interface{}) error {
 
 type NullUserRole struct {
 	UserRole UserRole
-	Valid    bool // Valid is true if UserRole is not NULL
+	Valid    bool
 }
 
-// Scan implements the Scanner interface.
 func (ns *NullUserRole) Scan(value interface{}) error {
 	if value == nil {
 		ns.UserRole, ns.Valid = "", false
@@ -46,7 +45,6 @@ func (ns *NullUserRole) Scan(value interface{}) error {
 	return ns.UserRole.Scan(value)
 }
 
-// Value implements the driver Valuer interface.
 func (ns NullUserRole) Value() (driver.Value, error) {
 	if !ns.Valid {
 		return nil, nil
@@ -59,12 +57,20 @@ type Group struct {
 	Name string
 }
 
+type RefreshToken struct {
+	ID        int32
+	UserID    int32
+	TokenHash string
+	ExpiresAt pgtype.Timestamp
+	RevokedAt pgtype.Timestamp
+	CreatedAt pgtype.Timestamp
+}
+
 type Student struct {
-	ID          int32
-	Fio         string
-	PhoneNumber string
-	UserID      pgtype.Int4
-	GroupID     pgtype.Int4
+	ID      int32
+	Fio     string
+	UserID  pgtype.Int4
+	GroupID pgtype.Int4
 }
 
 type Teacher struct {
@@ -84,4 +90,5 @@ type User struct {
 	PasswordHash string
 	Role         UserRole
 	CreatedAt    pgtype.Timestamp
+	PhoneNumber  string
 }

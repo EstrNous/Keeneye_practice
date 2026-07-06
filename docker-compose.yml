@@ -1,5 +1,4 @@
 services:
-  # 1. Контейнер Базы Данных
   postgres_db:
     image: postgres:${POSTGRES_VERSION}
     container_name: keeneye_postgres
@@ -19,7 +18,6 @@ services:
     networks:
       - app-network
 
-  # 2. Контейнер Бэкенда
   backend:
     build:
       context: ./backend
@@ -29,6 +27,13 @@ services:
       - "${BACKEND_PORT}:8080"
     environment:
       - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@postgres_db:5432/${DB_NAME}?sslmode=disable
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ACCESS_TTL=${JWT_ACCESS_TTL:-15m}
+      - JWT_REFRESH_TTL=${JWT_REFRESH_TTL:-168h}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - APP_ENV=${APP_ENV:-development}
+      - SEED_DEV_DATA=${SEED_DEV_DATA:-true}
+      - DEV_SEED_PASSWORD=${DEV_SEED_PASSWORD:-DevPassword1!}
     depends_on:
       postgres_db:
         condition: service_healthy
