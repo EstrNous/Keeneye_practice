@@ -3,13 +3,12 @@ package repository
 import (
 	"context"
 
-	"keeneye_practice/app/internal/apperrors"
-	"keeneye_practice/app/internal/db"
-	"keeneye_practice/app/internal/domain"
-
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"keeneye_practice/app/internal/apperrors"
+	"keeneye_practice/app/internal/db"
+	"keeneye_practice/app/internal/dbutil"
+	"keeneye_practice/app/internal/domain"
 )
 
 type postgresStudentRepository struct {
@@ -57,12 +56,7 @@ func (r *postgresStudentRepository) DeleteWithUser(ctx context.Context, studentI
 	if err != nil {
 		return err
 	}
-	defer func(tx pgx.Tx, ctx context.Context) {
-		err := tx.Rollback(ctx)
-		if err != nil {
-
-		}
-	}(tx, ctx)
+	defer dbutil.Rollback(ctx, tx)
 
 	qTx := r.q.WithTx(tx)
 	if err := qTx.DeleteStudent(ctx, studentID); err != nil {

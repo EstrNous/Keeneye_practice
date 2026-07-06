@@ -11,10 +11,10 @@ import (
 	"keeneye_practice/app/internal/apperrors"
 	"keeneye_practice/app/internal/config"
 	"keeneye_practice/app/internal/db"
+	"keeneye_practice/app/internal/dbutil"
 	"keeneye_practice/app/internal/domain"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
@@ -71,12 +71,7 @@ func (s *authService) RefreshTokens(ctx context.Context, refreshToken string) (s
 	if err != nil {
 		return "", "", err
 	}
-	defer func(tx pgx.Tx, ctx context.Context) {
-		err := tx.Rollback(ctx)
-		if err != nil {
-
-		}
-	}(tx, ctx)
+	defer dbutil.Rollback(ctx, tx)
 
 	qTx := s.q.WithTx(tx)
 
@@ -116,12 +111,7 @@ func (s *authService) Register(ctx context.Context, email, password, role, phone
 	if err != nil {
 		return 0, err
 	}
-	defer func(tx pgx.Tx, ctx context.Context) {
-		err := tx.Rollback(ctx)
-		if err != nil {
-
-		}
-	}(tx, ctx)
+	defer dbutil.Rollback(ctx, tx)
 
 	qTx := s.q.WithTx(tx)
 

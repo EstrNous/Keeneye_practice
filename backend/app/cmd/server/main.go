@@ -167,12 +167,11 @@ func runMigrations(dbURL string) error {
 	if err != nil {
 		return err
 	}
-	defer func(migrationDB *sql.DB) {
-		err := migrationDB.Close()
-		if err != nil {
-
+	defer func() {
+		if cerr := migrationDB.Close(); cerr != nil {
+			slog.Error("migration database close failed", "error", cerr)
 		}
-	}(migrationDB)
+	}()
 
 	goose.SetBaseFS(migrations.EmbedFS)
 	if err := goose.SetDialect("postgres"); err != nil {
