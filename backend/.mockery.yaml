@@ -1,0 +1,17 @@
+with-expecter: false
+resolve-type-alias: false
+issue-845-fix: true
+dir: app/internal/mocks
+outpkg: mocks
+filename: "{{.InterfaceName}}.go"
+mockname: "{{.InterfaceName}}"
+packages:
+  keeneye_practice/app/internal/domain:
+    interfaces:
+      AuthService:
+      StudentService:
+      StudentRepository:
+      TeacherService:
+      TeacherRepository:
+      GroupService:
+      GroupRepository:
