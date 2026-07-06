@@ -7,6 +7,7 @@ import (
 	"keeneye_practice/app/internal/db"
 	"keeneye_practice/app/internal/domain"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -54,7 +55,12 @@ func (r *postgresTeacherRepository) DeleteWithUser(ctx context.Context, teacherI
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func(tx pgx.Tx, ctx context.Context) {
+		err := tx.Rollback(ctx)
+		if err != nil {
+
+		}
+	}(tx, ctx)
 
 	qTx := r.q.WithTx(tx)
 	if err := qTx.DeleteTeacher(ctx, teacherID); err != nil {
