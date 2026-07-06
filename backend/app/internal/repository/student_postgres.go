@@ -2,91 +2,135 @@ package repository
 
 import (
 	"context"
+
+	"keeneye_practice/app/internal/apperrors"
 	"keeneye_practice/app/internal/db"
 	"keeneye_practice/app/internal/domain"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type postgresStudentRepository struct {
-	q *db.Queries
+	q    *db.Queries
+	pool *pgxpool.Pool
 }
 
-func NewPostgresStudentRepository(q *db.Queries) domain.StudentRepository {
-	return &postgresStudentRepository{q: q}
+func NewPostgresStudentRepository(q *db.Queries, pool *pgxpool.Pool) domain.StudentRepository {
+	return &postgresStudentRepository{q: q, pool: pool}
 }
 
 func (r *postgresStudentRepository) GetByID(ctx context.Context, id int32) (*domain.Student, error) {
 	row, err := r.q.GetStudentByID(ctx, id)
 	if err != nil {
-		return nil, err
+		return nil, apperrors.MapPG(err)
+	}
+	return mapStudentRow(row.ID, row.Fio, row.UserID, row.GroupID, row.GroupName), nil
+}
+
+func (r *postgresStudentRepository) Create(ctx context.Context, userID int32, groupID int32, fio string) (*domain.Student, error) {
+	row, err := r.q.CreateStudent(ctx, db.CreateStudentParams{
+		UserID:  pgtype.Int4{Int32: userID, Valid: true},
+		GroupID: pgtype.Int4{Int32: groupID, Valid: true},
+		Fio:     fio,
+	})
+	if err != nil {
+		return nil, apperrors.MapPG(err)
 	}
 	return &domain.Student{
-		ID:          row.ID,
-		UserID:      row.UserID.Int32,
-		GroupID:     row.GroupID.Int32,
-		GroupName:   row.GroupName.String,
-		Fio:         row.Fio,
-		PhoneNumber: row.PhoneNumber,
+		ID: row.ID, UserID: row.UserID.Int32, GroupID: row.GroupID.Int32, Fio: row.Fio,
 	}, nil
 }
 
-func (r *postgresStudentRepository) Create(ctx context.Context, s *domain.Student) (*domain.Student, error) {
-	row, err := r.q.CreateStudent(ctx, db.CreateStudentParams{
-		UserID:      pgtype.Int4{Int32: s.UserID, Valid: true},
-		GroupID:     pgtype.Int4{Int32: s.GroupID, Valid: s.GroupID != 0},
-		Fio:         s.Fio,
-		PhoneNumber: s.PhoneNumber,
+func (r *postgresStudentRepository) Update(ctx context.Context, id int32, fio string, groupID int32) error {
+	err := r.q.UpdateStudent(ctx, db.UpdateStudentParams{
+		ID:      id,
+		GroupID: pgtype.Int4{Int32: groupID, Valid: groupID != 0},
+		Fio:     fio,
 	})
-	if err != nil {
-		return nil, err
-	}
+	return apperrors.MapPG(err)
+}
 
-	return &domain.Student{
-		ID:          row.ID,
-		UserID:      row.UserID.Int32,
-		GroupID:     row.GroupID.Int32,
-		GroupName:   "",
-		Fio:         row.Fio,
-		PhoneNumber: row.PhoneNumber,
-	}, nil
+func (r *postgresStudentRepository) DeleteWithUser(ctx context.Context, studentID int32, userID int32) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func(tx pgx.Tx, ctx context.Context) {
+		err := tx.Rollback(ctx)
+		if err != nil {
+
+		}
+	}(tx, ctx)
+
+	qTx := r.q.WithTx(tx)
+	if err := qTx.DeleteStudent(ctx, studentID); err != nil {
+		return apperrors.MapPG(err)
+	}
+	if err := qTx.DeleteUser(ctx, userID); err != nil {
+		return apperrors.MapPG(err)
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *postgresStudentRepository) ListAll(ctx context.Context) ([]domain.Student, error) {
 	rows, err := r.q.ListAllStudents(ctx)
 	if err != nil {
-		return nil, err
+		return nil, apperrors.MapPG(err)
 	}
-	return mapRowsToDomain(rows), nil
+	return mapListRows(rows), nil
+}
+
+func (r *postgresStudentRepository) ListByGroupID(ctx context.Context, groupID int32) ([]domain.Student, error) {
+	rows, err := r.q.GetStudentsByGroupID(ctx, groupID)
+	if err != nil {
+		return nil, apperrors.MapPG(err)
+	}
+	res := make([]domain.Student, len(rows))
+	for i, row := range rows {
+		res[i] = *mapStudentRow(row.ID, row.Fio, row.UserID, row.GroupID, row.GroupName)
+	}
+	return res, nil
 }
 
 func (r *postgresStudentRepository) ListClassmates(ctx context.Context, studentID int32) ([]domain.Student, error) {
 	rows, err := r.q.GetClassmates(ctx, studentID)
 	if err != nil {
-		return nil, err
+		return nil, apperrors.MapPG(err)
 	}
-	return mapClassmatesToDomain(rows), nil
+	res := make([]domain.Student, len(rows))
+	for i, row := range rows {
+		res[i] = *mapStudentRow(row.ID, row.Fio, row.UserID, row.GroupID, row.GroupName)
+	}
+	return res, nil
 }
 
 func (r *postgresStudentRepository) ListByTeacherGroups(ctx context.Context, teacherID int32) ([]domain.Student, error) {
 	rows, err := r.q.GetStudentsByTeacherGroups(ctx, teacherID)
 	if err != nil {
+		return nil, apperrors.MapPG(err)
+	}
+	res := make([]domain.Student, len(rows))
+	for i, row := range rows {
+		res[i] = domain.Student{
+			ID: row.ID, UserID: row.UserID.Int32, GroupID: row.GroupID.Int32,
+			GroupName: row.GroupName, Fio: row.Fio,
+		}
+	}
+	return res, nil
+}
+
+func (r *postgresStudentRepository) GetByUserID(ctx context.Context, userID int32) (*domain.Student, error) {
+	row, err := r.q.GetStudentByUserID(ctx, pgtype.Int4{Int32: userID, Valid: true})
+	if err != nil {
+		return nil, apperrors.MapPG(err)
+	}
+	student, err := r.GetByID(ctx, row.ID)
+	if err != nil {
 		return nil, err
 	}
-	return mapTeacherRowsToDomain(rows), nil
-}
-
-func (r *postgresStudentRepository) Update(ctx context.Context, id int32, s *domain.Student) error {
-	return r.q.UpdateStudent(ctx, db.UpdateStudentParams{
-		ID:          id,
-		GroupID:     pgtype.Int4{Int32: s.GroupID, Valid: s.GroupID != 0},
-		Fio:         s.Fio,
-		PhoneNumber: s.PhoneNumber,
-	})
-}
-
-func (r *postgresStudentRepository) Delete(ctx context.Context, id int32) error {
-	return r.q.DeleteStudent(ctx, id)
+	return student, nil
 }
 
 func (r *postgresStudentRepository) CheckTeacherGroup(ctx context.Context, teacherID, groupID int32) (bool, error) {
@@ -96,36 +140,18 @@ func (r *postgresStudentRepository) CheckTeacherGroup(ctx context.Context, teach
 	})
 }
 
-func mapRowsToDomain(rows []db.ListAllStudentsRow) []domain.Student {
+func mapListRows(rows []db.ListAllStudentsRow) []domain.Student {
 	res := make([]domain.Student, len(rows))
-	for i, r := range rows {
-		res[i] = domain.Student{
-			ID: r.ID, UserID: r.UserID.Int32, GroupID: r.GroupID.Int32,
-			GroupName: r.GroupName.String, Fio: r.Fio, PhoneNumber: r.PhoneNumber,
-		}
+	for i, row := range rows {
+		res[i] = *mapStudentRow(row.ID, row.Fio, row.UserID, row.GroupID, row.GroupName)
 	}
 	return res
 }
 
-func mapClassmatesToDomain(rows []db.GetClassmatesRow) []domain.Student {
-	res := make([]domain.Student, len(rows))
-	for i, r := range rows {
-		res[i] = domain.Student{
-			ID: r.ID, UserID: r.UserID.Int32, GroupID: r.GroupID.Int32,
-			GroupName: r.GroupName.String, Fio: r.Fio, PhoneNumber: r.PhoneNumber,
-		}
+func mapStudentRow(id int32, fio string, userID, groupID pgtype.Int4, groupName pgtype.Text) *domain.Student {
+	return &domain.Student{
+		ID: id, Fio: fio,
+		UserID: userID.Int32, GroupID: groupID.Int32,
+		GroupName: groupName.String,
 	}
-	return res
-}
-
-func mapTeacherRowsToDomain(rows []db.GetStudentsByTeacherGroupsRow) []domain.Student {
-	res := make([]domain.Student, len(rows))
-	for i, r := range rows {
-		res[i] = domain.Student{
-			ID: r.ID, UserID: r.UserID.Int32, GroupID: r.GroupID.Int32,
-			GroupName: r.GroupName,
-			Fio:       r.Fio, PhoneNumber: r.PhoneNumber,
-		}
-	}
-	return res
 }

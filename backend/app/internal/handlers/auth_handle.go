@@ -1,8 +1,11 @@
 package handlers
 
 import (
-	"keeneye_practice/app/internal/domain"
 	"net/http"
+
+	"keeneye_practice/app/internal/apperrors"
+	"keeneye_practice/app/internal/domain"
+	"keeneye_practice/app/internal/dto"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,27 +18,50 @@ func NewAuthHandler(svc domain.AuthService) *AuthHandler {
 	return &AuthHandler{svc: svc}
 }
 
-type loginRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
-}
-
-type loginResponse struct {
-	Token string `json:"token"`
-}
-
 func (h *AuthHandler) Login(c *gin.Context) {
-	var req loginRequest
+	var req dto.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request format"})
+		_ = c.Error(apperrors.NewValidation(err.Error()))
 		return
 	}
 
-	token, err := h.svc.Login(c.Request.Context(), req.Email, req.Password)
+	access, refresh, err := h.svc.Login(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
-	c.JSON(http.StatusOK, loginResponse{Token: token})
+	c.JSON(http.StatusOK, dto.TokenResponse{AccessToken: access, RefreshToken: refresh})
+}
+
+func (h *AuthHandler) Register(c *gin.Context) {
+	var req dto.RegisterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(apperrors.NewValidation(err.Error()))
+		return
+	}
+
+	_, err := h.svc.Register(c.Request.Context(), req.Email, req.Password, req.Role, req.PhoneNumber, req.ProfileFIO, req.GroupID)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"status": "registered"})
+}
+
+func (h *AuthHandler) Refresh(c *gin.Context) {
+	var req dto.RefreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(apperrors.NewValidation(err.Error()))
+		return
+	}
+
+	access, refresh, err := h.svc.RefreshTokens(c.Request.Context(), req.RefreshToken)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.TokenResponse{AccessToken: access, RefreshToken: refresh})
 }
