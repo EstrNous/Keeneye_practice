@@ -1,0 +1,72 @@
+ENV_FILE := .env
+COMPOSE := docker compose --env-file $(ENV_FILE)
+
+ifneq (,$(wildcard $(ENV_FILE)))
+include $(ENV_FILE)
+endif
+
+DB_NAME ?= test
+BACKEND_PORT ?= 8080
+
+.PHONY: env up down down-v reset-db restart logs logs-backend logs-db ps health db-shell build test test-cover test-docker sqlc mocks lint rebuild
+
+env:
+	powershell -NoProfile -Command "if (-not (Test-Path '$(ENV_FILE)')) { Copy-Item '.env.example' '$(ENV_FILE)'; Write-Host 'Created $(ENV_FILE) from .env.example' }"
+
+up: env
+	$(COMPOSE) up --build -d
+	@echo Waiting for backend health...
+	powershell -NoProfile -Command "for ($$i=0; $$i -lt 30; $$i++) { try { $$r = Invoke-RestMethod -Uri http://localhost:$(BACKEND_PORT)/healthz -TimeoutSec 2; if ($$r.status -eq 'up') { Write-Host 'Backend is up'; exit 0 } } catch {} Start-Sleep -Seconds 2 }; Write-Host 'Backend not ready yet - check: make logs-backend'; exit 1"
+
+down:
+	$(COMPOSE) down
+
+down-v:
+	$(COMPOSE) down -v
+
+reset-db: down-v up
+
+restart:
+	$(COMPOSE) restart backend
+
+rebuild: env
+	$(COMPOSE) up --build -d backend
+
+logs:
+	$(COMPOSE) logs -f
+
+logs-backend:
+	$(COMPOSE) logs -f backend
+
+logs-db:
+	$(COMPOSE) logs -f postgres_db
+
+ps:
+	$(COMPOSE) ps
+
+health:
+	powershell -NoProfile -Command "Invoke-RestMethod -Uri http://localhost:$(BACKEND_PORT)/healthz | ConvertTo-Json"
+
+db-shell:
+	docker exec -it keeneye_postgres psql -U postgres -d $(DB_NAME)
+
+build:
+	cd backend && go build -o bin/server ./app/cmd/server/main.go
+
+test:
+	cd backend && go test ./... -count=1
+
+test-cover:
+	cd backend && go test ./... -coverprofile=coverage.out
+
+test-docker:
+	docker run --rm -v "$(CURDIR)/backend:/app" -w /app golang:1.26-alpine sh -c "apk add --no-cache git >/dev/null && go test ./... -count=1"
+
+sqlc:
+	cd backend && sqlc generate
+
+mocks:
+	cd backend && go run github.com/vektra/mockery/v2@v2.53.6
+
+lint:
+	cd backend && go vet ./...
