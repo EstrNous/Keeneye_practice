@@ -42,9 +42,9 @@ func (_m *StudentRepository) CheckTeacherGroup(ctx context.Context, teacherID in
 	return r0, r1
 }
 
-// Create provides a mock function with given fields: ctx, s
-func (_m *StudentRepository) Create(ctx context.Context, s *domain.Student) (*domain.Student, error) {
-	ret := _m.Called(ctx, s)
+// Create provides a mock function with given fields: ctx, userID, groupID, fio
+func (_m *StudentRepository) Create(ctx context.Context, userID int32, groupID int32, fio string) (*domain.Student, error) {
+	ret := _m.Called(ctx, userID, groupID, fio)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Create")
@@ -52,19 +52,19 @@ func (_m *StudentRepository) Create(ctx context.Context, s *domain.Student) (*do
 
 	var r0 *domain.Student
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, *domain.Student) (*domain.Student, error)); ok {
-		return rf(ctx, s)
+	if rf, ok := ret.Get(0).(func(context.Context, int32, int32, string) (*domain.Student, error)); ok {
+		return rf(ctx, userID, groupID, fio)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, *domain.Student) *domain.Student); ok {
-		r0 = rf(ctx, s)
+	if rf, ok := ret.Get(0).(func(context.Context, int32, int32, string) *domain.Student); ok {
+		r0 = rf(ctx, userID, groupID, fio)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*domain.Student)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, *domain.Student) error); ok {
-		r1 = rf(ctx, s)
+	if rf, ok := ret.Get(1).(func(context.Context, int32, int32, string) error); ok {
+		r1 = rf(ctx, userID, groupID, fio)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -72,17 +72,17 @@ func (_m *StudentRepository) Create(ctx context.Context, s *domain.Student) (*do
 	return r0, r1
 }
 
-// Delete provides a mock function with given fields: ctx, id
-func (_m *StudentRepository) Delete(ctx context.Context, id int32) error {
-	ret := _m.Called(ctx, id)
+// DeleteWithUser provides a mock function with given fields: ctx, studentID, userID
+func (_m *StudentRepository) DeleteWithUser(ctx context.Context, studentID int32, userID int32) error {
+	ret := _m.Called(ctx, studentID, userID)
 
 	if len(ret) == 0 {
-		panic("no return value specified for Delete")
+		panic("no return value specified for DeleteWithUser")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, int32) error); ok {
-		r0 = rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(context.Context, int32, int32) error); ok {
+		r0 = rf(ctx, studentID, userID)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -120,6 +120,36 @@ func (_m *StudentRepository) GetByID(ctx context.Context, id int32) (*domain.Stu
 	return r0, r1
 }
 
+// GetByUserID provides a mock function with given fields: ctx, userID
+func (_m *StudentRepository) GetByUserID(ctx context.Context, userID int32) (*domain.Student, error) {
+	ret := _m.Called(ctx, userID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetByUserID")
+	}
+
+	var r0 *domain.Student
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, int32) (*domain.Student, error)); ok {
+		return rf(ctx, userID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, int32) *domain.Student); ok {
+		r0 = rf(ctx, userID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*domain.Student)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, int32) error); ok {
+		r1 = rf(ctx, userID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // ListAll provides a mock function with given fields: ctx
 func (_m *StudentRepository) ListAll(ctx context.Context) ([]domain.Student, error) {
 	ret := _m.Called(ctx)
@@ -143,6 +173,36 @@ func (_m *StudentRepository) ListAll(ctx context.Context) ([]domain.Student, err
 
 	if rf, ok := ret.Get(1).(func(context.Context) error); ok {
 		r1 = rf(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// ListByGroupID provides a mock function with given fields: ctx, groupID
+func (_m *StudentRepository) ListByGroupID(ctx context.Context, groupID int32) ([]domain.Student, error) {
+	ret := _m.Called(ctx, groupID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListByGroupID")
+	}
+
+	var r0 []domain.Student
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, int32) ([]domain.Student, error)); ok {
+		return rf(ctx, groupID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, int32) []domain.Student); ok {
+		r0 = rf(ctx, groupID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]domain.Student)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, int32) error); ok {
+		r1 = rf(ctx, groupID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -210,17 +270,17 @@ func (_m *StudentRepository) ListClassmates(ctx context.Context, studentID int32
 	return r0, r1
 }
 
-// Update provides a mock function with given fields: ctx, id, s
-func (_m *StudentRepository) Update(ctx context.Context, id int32, s *domain.Student) error {
-	ret := _m.Called(ctx, id, s)
+// Update provides a mock function with given fields: ctx, id, fio, groupID
+func (_m *StudentRepository) Update(ctx context.Context, id int32, fio string, groupID int32) error {
+	ret := _m.Called(ctx, id, fio, groupID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Update")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, int32, *domain.Student) error); ok {
-		r0 = rf(ctx, id, s)
+	if rf, ok := ret.Get(0).(func(context.Context, int32, string, int32) error); ok {
+		r0 = rf(ctx, id, fio, groupID)
 	} else {
 		r0 = ret.Error(0)
 	}

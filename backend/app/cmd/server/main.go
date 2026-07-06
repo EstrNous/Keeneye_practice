@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -12,104 +11,127 @@ import (
 	"syscall"
 	"time"
 
+	"keeneye_practice/app/internal/config"
 	"keeneye_practice/app/internal/db"
 	"keeneye_practice/app/internal/handlers"
-	"keeneye_practice/app/internal/middleware" // Новый импорт
+	"keeneye_practice/app/internal/middleware"
 	"keeneye_practice/app/internal/repository"
+	"keeneye_practice/app/internal/seed"
 	"keeneye_practice/app/internal/service"
+	"keeneye_practice/app/internal/validators"
 	"keeneye_practice/migrations"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("config load failed", "error", err)
+		os.Exit(1)
+	}
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)}))
 	slog.SetDefault(logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		log.Fatal("DATABASE_URL environment variable is required")
-	}
-
-	config, err := pgxpool.ParseConfig(dbURL)
+	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
-		logger.Error("Failed to parse DB URL", "error", err)
+		logger.Error("failed to parse database url", "error", err)
 		os.Exit(1)
 	}
 
-	dbPool, err := pgxpool.NewWithConfig(ctx, config)
+	dbPool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
-		logger.Error("Database connection failed", "error", err)
+		logger.Error("database connection failed", "error", err)
 		os.Exit(1)
 	}
 	defer dbPool.Close()
 
-	migrationDB, err := sql.Open("pgx", dbURL)
-	if err != nil {
-		log.Fatalf("Ошибка открытия БД для миграций: %v", err)
+	if err := runMigrations(cfg.DatabaseURL); err != nil {
+		logger.Error("migrations failed", "error", err)
+		os.Exit(1)
 	}
-	defer func() {
-		if err := migrationDB.Close(); err != nil {
-			logger.Error("Failed to close migration DB connection", "error", err)
-		}
-	}()
-
-	goose.SetBaseFS(migrations.EmbedFS)
-
-	if err := goose.SetDialect("postgres"); err != nil {
-		log.Fatalf("Ошибка установки диалекта goose: %v", err)
-	}
-
-	log.Println("Проверка и накат миграций...")
-	if err := goose.Up(migrationDB, "."); err != nil {
-		log.Fatalf("Ошибка применения миграций: %v", err)
-	}
-	log.Println("Миграции успешно применены!")
 
 	queries := db.New(dbPool)
 
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		jwtSecret = "super-secret-local-key"
+	authSvc := service.NewAuthService(queries, dbPool, cfg)
+	groupRepo := repository.NewPostgresGroupRepository(queries)
+	studentRepo := repository.NewPostgresStudentRepository(queries, dbPool)
+	teacherRepo := repository.NewPostgresTeacherRepository(queries, dbPool)
+
+	studentSvc := service.NewStudentService(studentRepo, authSvc, groupRepo)
+	teacherSvc := service.NewTeacherService(teacherRepo)
+	groupSvc := service.NewGroupService(groupRepo)
+
+	if cfg.SeedDevData {
+		if err := seed.DevData(ctx, queries, authSvc); err != nil {
+			logger.Error("dev seed failed", "error", err)
+			os.Exit(1)
+		}
 	}
 
-	authSvc := service.NewAuthService(queries, dbPool, jwtSecret)
+	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
+		if err := validators.RegisterCustomValidations(v); err != nil {
+			logger.Error("failed to register custom validations", "error", err)
+			os.Exit(1)
+		}
+	}
+
 	authHandler := handlers.NewAuthHandler(authSvc)
-	studentRepo := repository.NewPostgresStudentRepository(queries)
-	studentSvc := service.NewStudentService(studentRepo)
 	studentHandler := handlers.NewStudentHandler(studentSvc)
+	teacherHandler := handlers.NewTeacherHandler(teacherSvc)
+	groupHandler := handlers.NewGroupHandler(groupSvc)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(middleware.RequestID())
+	r.Use(httpLogMiddleware(logger))
+	r.Use(middleware.ErrorHandler())
 
-	// Логирование HTTP запросов
-	r.Use(func(c *gin.Context) {
-		start := time.Now()
-		path := c.Request.URL.Path
-		c.Next()
-		logger.Info("HTTP Request", "method", c.Request.Method, "path", path, "status", c.Writer.Status(), "latency", time.Since(start).String())
-	})
-
-	auth := r.Group("/api/auth")
+	auth := r.Group("/api/v1/auth")
 	{
 		auth.POST("/login", authHandler.Login)
+		auth.POST("/register", authHandler.Register)
+		auth.POST("/refresh", authHandler.Refresh)
 	}
 
-	api := r.Group("/api/base")
-	api.Use(middleware.AuthMiddleware(jwtSecret))
+	api := r.Group("/api/v1")
+	api.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	{
-		api.GET("/students", middleware.RequireRoles("admin", "teacher", "student"), studentHandler.GetAll)
-		api.GET("/students/:id", middleware.RequireRoles("admin", "teacher", "student"), studentHandler.GetByID)
-		api.PUT("/students", middleware.RequireRoles("admin", "teacher", "student"), studentHandler.Update)
+		students := api.Group("/students")
+		{
+			students.GET("", middleware.RequireRoles("admin", "teacher", "student"), studentHandler.GetAll)
+			students.GET("/:id", middleware.RequireRoles("admin", "teacher", "student"), studentHandler.GetByID)
+			students.POST("", middleware.RequireRoles("admin"), studentHandler.Create)
+			students.PUT("/:id", middleware.RequireRoles("admin", "teacher", "student"), studentHandler.Update)
+			students.DELETE("/:id", middleware.RequireRoles("admin"), studentHandler.Delete)
+		}
 
-		api.DELETE("/students/:id", middleware.RequireRoles("admin"), studentHandler.Delete)
+		teachers := api.Group("/teachers")
+		{
+			teachers.GET("", middleware.RequireRoles("admin"), teacherHandler.List)
+			teachers.GET("/:id", middleware.RequireRoles("admin", "teacher"), teacherHandler.GetByID)
+			teachers.PUT("/:id", middleware.RequireRoles("admin", "teacher"), teacherHandler.Update)
+			teachers.DELETE("/:id", middleware.RequireRoles("admin"), teacherHandler.Delete)
+			teachers.GET("/:id/groups", middleware.RequireRoles("admin", "teacher"), teacherHandler.ListGroups)
+			teachers.POST("/:id/groups/:groupId", middleware.RequireRoles("admin"), teacherHandler.AssignGroup)
+			teachers.DELETE("/:id/groups/:groupId", middleware.RequireRoles("admin"), teacherHandler.RemoveGroup)
+		}
+
+		groups := api.Group("/groups")
+		{
+			groups.GET("", middleware.RequireRoles("admin", "teacher"), groupHandler.List)
+			groups.POST("", middleware.RequireRoles("admin"), groupHandler.Create)
+		}
 	}
 
 	r.GET("/healthz", func(c *gin.Context) {
@@ -123,20 +145,61 @@ func main() {
 	srv := &http.Server{Addr: ":8080", Handler: r}
 
 	go func() {
-		logger.Info("App server listening on port :8080")
+		logger.Info("server listening", "addr", ":8080")
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("Listen error", "error", err)
+			logger.Error("listen error", "error", err)
 		}
 	}()
 
 	<-ctx.Done()
-	logger.Info("Shutting down gracefully...")
+	logger.Info("shutting down")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Error("Forced shutdown enforced", "error", err)
+		logger.Error("forced shutdown", "error", err)
 	}
-	logger.Info("Application stopped cleanly")
+}
+
+func runMigrations(dbURL string) error {
+	migrationDB, err := sql.Open("pgx", dbURL)
+	if err != nil {
+		return err
+	}
+	defer migrationDB.Close()
+
+	goose.SetBaseFS(migrations.EmbedFS)
+	if err := goose.SetDialect("postgres"); err != nil {
+		return err
+	}
+	return goose.Up(migrationDB, ".")
+}
+
+func httpLogMiddleware(logger *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		path := c.Request.URL.Path
+		c.Next()
+		logger.Info("http request",
+			"request_id", c.GetString("requestID"),
+			"method", c.Request.Method,
+			"path", path,
+			"status", c.Writer.Status(),
+			"latency", time.Since(start).String(),
+		)
+	}
+}
+
+func parseLogLevel(level string) slog.Level {
+	switch level {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }

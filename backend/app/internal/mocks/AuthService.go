@@ -14,7 +14,7 @@ type AuthService struct {
 }
 
 // Login provides a mock function with given fields: ctx, email, password
-func (_m *AuthService) Login(ctx context.Context, email string, password string) (string, error) {
+func (_m *AuthService) Login(ctx context.Context, email string, password string) (string, string, error) {
 	ret := _m.Called(ctx, email, password)
 
 	if len(ret) == 0 {
@@ -22,8 +22,9 @@ func (_m *AuthService) Login(ctx context.Context, email string, password string)
 	}
 
 	var r0 string
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string) (string, error)); ok {
+	var r1 string
+	var r2 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string) (string, string, error)); ok {
 		return rf(ctx, email, password)
 	}
 	if rf, ok := ret.Get(0).(func(context.Context, string, string) string); ok {
@@ -32,31 +33,82 @@ func (_m *AuthService) Login(ctx context.Context, email string, password string)
 		r0 = ret.Get(0).(string)
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, string, string) string); ok {
 		r1 = rf(ctx, email, password)
 	} else {
-		r1 = ret.Error(1)
+		r1 = ret.Get(1).(string)
 	}
 
-	return r0, r1
+	if rf, ok := ret.Get(2).(func(context.Context, string, string) error); ok {
+		r2 = rf(ctx, email, password)
+	} else {
+		r2 = ret.Error(2)
+	}
+
+	return r0, r1, r2
 }
 
-// Register provides a mock function with given fields: ctx, email, password, role, profileFIO, groupID
-func (_m *AuthService) Register(ctx context.Context, email string, password string, role string, profileFIO string, groupID *int32) error {
-	ret := _m.Called(ctx, email, password, role, profileFIO, groupID)
+// RefreshTokens provides a mock function with given fields: ctx, refreshToken
+func (_m *AuthService) RefreshTokens(ctx context.Context, refreshToken string) (string, string, error) {
+	ret := _m.Called(ctx, refreshToken)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RefreshTokens")
+	}
+
+	var r0 string
+	var r1 string
+	var r2 error
+	if rf, ok := ret.Get(0).(func(context.Context, string) (string, string, error)); ok {
+		return rf(ctx, refreshToken)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string) string); ok {
+		r0 = rf(ctx, refreshToken)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string) string); ok {
+		r1 = rf(ctx, refreshToken)
+	} else {
+		r1 = ret.Get(1).(string)
+	}
+
+	if rf, ok := ret.Get(2).(func(context.Context, string) error); ok {
+		r2 = rf(ctx, refreshToken)
+	} else {
+		r2 = ret.Error(2)
+	}
+
+	return r0, r1, r2
+}
+
+// Register provides a mock function with given fields: ctx, email, password, role, phone, profileFIO, groupID
+func (_m *AuthService) Register(ctx context.Context, email string, password string, role string, phone string, profileFIO string, groupID *int32) (int32, error) {
+	ret := _m.Called(ctx, email, password, role, phone, profileFIO, groupID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Register")
 	}
 
-	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, string, *int32) error); ok {
-		r0 = rf(ctx, email, password, role, profileFIO, groupID)
+	var r0 int32
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, string, string, *int32) (int32, error)); ok {
+		return rf(ctx, email, password, role, phone, profileFIO, groupID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, string, string, *int32) int32); ok {
+		r0 = rf(ctx, email, password, role, phone, profileFIO, groupID)
 	} else {
-		r0 = ret.Error(0)
+		r0 = ret.Get(0).(int32)
 	}
 
-	return r0
+	if rf, ok := ret.Get(1).(func(context.Context, string, string, string, string, string, *int32) error); ok {
+		r1 = rf(ctx, email, password, role, phone, profileFIO, groupID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 // NewAuthService creates a new instance of AuthService. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

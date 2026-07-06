@@ -14,6 +14,36 @@ type StudentService struct {
 	mock.Mock
 }
 
+// CreateStudent provides a mock function with given fields: ctx, role, req
+func (_m *StudentService) CreateStudent(ctx context.Context, role string, req domain.CreateStudentInput) (*domain.Student, error) {
+	ret := _m.Called(ctx, role, req)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreateStudent")
+	}
+
+	var r0 *domain.Student
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, domain.CreateStudentInput) (*domain.Student, error)); ok {
+		return rf(ctx, role, req)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string, domain.CreateStudentInput) *domain.Student); ok {
+		r0 = rf(ctx, role, req)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*domain.Student)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string, domain.CreateStudentInput) error); ok {
+		r1 = rf(ctx, role, req)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // GetStudent provides a mock function with given fields: ctx, role, actorProfileID, targetID
 func (_m *StudentService) GetStudent(ctx context.Context, role string, actorProfileID int32, targetID int32) (*domain.Student, error) {
 	ret := _m.Called(ctx, role, actorProfileID, targetID)
@@ -44,9 +74,9 @@ func (_m *StudentService) GetStudent(ctx context.Context, role string, actorProf
 	return r0, r1
 }
 
-// GetStudentsList provides a mock function with given fields: ctx, role, profileID
-func (_m *StudentService) GetStudentsList(ctx context.Context, role string, profileID int32) ([]domain.Student, error) {
-	ret := _m.Called(ctx, role, profileID)
+// GetStudentsList provides a mock function with given fields: ctx, role, profileID, groupID
+func (_m *StudentService) GetStudentsList(ctx context.Context, role string, profileID int32, groupID *int32) ([]domain.Student, error) {
+	ret := _m.Called(ctx, role, profileID, groupID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetStudentsList")
@@ -54,19 +84,19 @@ func (_m *StudentService) GetStudentsList(ctx context.Context, role string, prof
 
 	var r0 []domain.Student
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, int32) ([]domain.Student, error)); ok {
-		return rf(ctx, role, profileID)
+	if rf, ok := ret.Get(0).(func(context.Context, string, int32, *int32) ([]domain.Student, error)); ok {
+		return rf(ctx, role, profileID, groupID)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, string, int32) []domain.Student); ok {
-		r0 = rf(ctx, role, profileID)
+	if rf, ok := ret.Get(0).(func(context.Context, string, int32, *int32) []domain.Student); ok {
+		r0 = rf(ctx, role, profileID, groupID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]domain.Student)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, string, int32) error); ok {
-		r1 = rf(ctx, role, profileID)
+	if rf, ok := ret.Get(1).(func(context.Context, string, int32, *int32) error); ok {
+		r1 = rf(ctx, role, profileID, groupID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -74,17 +104,17 @@ func (_m *StudentService) GetStudentsList(ctx context.Context, role string, prof
 	return r0, r1
 }
 
-// ModifyStudent provides a mock function with given fields: ctx, role, actorProfileID, targetStudentID, s
-func (_m *StudentService) ModifyStudent(ctx context.Context, role string, actorProfileID int32, targetStudentID int32, s *domain.Student) error {
-	ret := _m.Called(ctx, role, actorProfileID, targetStudentID, s)
+// ModifyStudent provides a mock function with given fields: ctx, role, actorProfileID, targetStudentID, fio, groupID
+func (_m *StudentService) ModifyStudent(ctx context.Context, role string, actorProfileID int32, targetStudentID int32, fio string, groupID int32) error {
+	ret := _m.Called(ctx, role, actorProfileID, targetStudentID, fio, groupID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ModifyStudent")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, int32, int32, *domain.Student) error); ok {
-		r0 = rf(ctx, role, actorProfileID, targetStudentID, s)
+	if rf, ok := ret.Get(0).(func(context.Context, string, int32, int32, string, int32) error); ok {
+		r0 = rf(ctx, role, actorProfileID, targetStudentID, fio, groupID)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -92,17 +122,17 @@ func (_m *StudentService) ModifyStudent(ctx context.Context, role string, actorP
 	return r0
 }
 
-// RemoveStudent provides a mock function with given fields: ctx, id
-func (_m *StudentService) RemoveStudent(ctx context.Context, id int32) error {
-	ret := _m.Called(ctx, id)
+// RemoveStudent provides a mock function with given fields: ctx, role, id
+func (_m *StudentService) RemoveStudent(ctx context.Context, role string, id int32) error {
+	ret := _m.Called(ctx, role, id)
 
 	if len(ret) == 0 {
 		panic("no return value specified for RemoveStudent")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, int32) error); ok {
-		r0 = rf(ctx, id)
+	if rf, ok := ret.Get(0).(func(context.Context, string, int32) error); ok {
+		r0 = rf(ctx, role, id)
 	} else {
 		r0 = ret.Error(0)
 	}
