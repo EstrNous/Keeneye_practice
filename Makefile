@@ -9,7 +9,7 @@ DB_NAME ?= test
 BACKEND_PORT ?= 8080
 NGINX_PORT ?= 80
 
-.PHONY: env up down down-v reset-db restart logs logs-backend logs-db logs-nginx ps health db-shell build test test-cover test-docker sqlc mocks lint rebuild route-test
+.PHONY: env up down down-v reset-db restart logs logs-backend logs-db logs-nginx logs-prometheus logs-loki logs-grafana ps health db-shell build test test-cover test-docker sqlc mocks lint rebuild route-test
 
 env:
 	powershell -NoProfile -Command "if (-not (Test-Path '$(ENV_FILE)')) { Copy-Item '.env.example' '$(ENV_FILE)'; Write-Host 'Created $(ENV_FILE) from .env.example' }"
@@ -41,6 +41,15 @@ logs-backend:
 
 logs-nginx:
 	$(COMPOSE) logs -f nginx
+
+logs-prometheus:
+	$(COMPOSE) logs -f prometheus
+
+logs-loki:
+	$(COMPOSE) logs -f loki promtail
+
+logs-grafana:
+	$(COMPOSE) logs -f grafana
 
 logs-db:
 	$(COMPOSE) logs -f postgres_db

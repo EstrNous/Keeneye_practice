@@ -51,9 +51,92 @@ services:
     networks:
       - app-network
 
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.4.0
+    command:
+      - -nginx.scrape-uri=http://nginx/stub_status
+    depends_on:
+      - nginx
+    networks:
+      - app-network
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    environment:
+      DATA_SOURCE_NAME: postgres://${DB_USER}:${DB_PASSWORD}@postgres_db:5432/${DB_NAME}?sslmode=disable
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: keeneye_prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    depends_on:
+      - backend
+      - nginx-exporter
+      - postgres-exporter
+    networks:
+      - app-network
+
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: keeneye_loki
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./observability/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - app-network
+
+  promtail:
+    image: grafana/promtail:3.4.2
+    volumes:
+      - ./observability/promtail/promtail-config.yaml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - app-network
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    container_name: keeneye_grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - app-network
+
 networks:
   app-network:
     driver: bridge
 
 volumes:
   pg_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:

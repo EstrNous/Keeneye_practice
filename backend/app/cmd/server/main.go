@@ -27,6 +27,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -96,6 +97,7 @@ func main() {
 	r.Use(gin.Recovery())
 	r.Use(middleware.RequestID())
 	r.Use(middleware.InstanceID())
+	r.Use(middleware.PrometheusMetrics())
 	r.Use(httpLogMiddleware(logger))
 	r.Use(middleware.ErrorHandler())
 
@@ -143,6 +145,8 @@ func main() {
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "up"})
 	})
+
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	srv := &http.Server{Addr: ":8080", Handler: r}
 

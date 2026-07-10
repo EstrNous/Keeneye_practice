@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: keeneye
+    orgId: 1
+    folder: Keeneye
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
