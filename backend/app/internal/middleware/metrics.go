@@ -15,7 +15,7 @@ var (
 			Name: "http_requests_total",
 			Help: "Total number of HTTP requests",
 		},
-		[]string{"method", "path", "status", "instance"},
+		[]string{"method", "path", "status", "replica"},
 	)
 
 	httpRequestDuration = promauto.NewHistogramVec(
@@ -24,7 +24,7 @@ var (
 			Help:    "HTTP request latency in seconds",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"method", "path", "status", "instance"},
+		[]string{"method", "path", "status", "replica"},
 	)
 )
 
@@ -39,8 +39,8 @@ func PrometheusMetrics() gin.HandlerFunc {
 		c.Next()
 
 		status := strconv.Itoa(c.Writer.Status())
-		instance := c.GetString("instanceID")
-		labels := []string{c.Request.Method, path, status, instance}
+		replica := c.GetString("instanceID")
+		labels := []string{c.Request.Method, path, status, replica}
 
 		httpRequestsTotal.WithLabelValues(labels...).Inc()
 		httpRequestDuration.WithLabelValues(labels...).Observe(time.Since(start).Seconds())
