@@ -54,7 +54,7 @@ services:
   nginx-exporter:
     image: nginx/nginx-prometheus-exporter:1.4.0
     command:
-      - -nginx.scrape-uri=http://nginx/stub_status
+      - --nginx.scrape-uri=http://nginx/stub_status
     depends_on:
       - nginx
     networks:

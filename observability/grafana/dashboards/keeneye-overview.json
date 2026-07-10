@@ -128,7 +128,7 @@
             "uid": "loki"
           },
           "editorMode": "code",
-          "expr": "{service=\"nginx\"} != \"/stub_status\"",
+          "expr": "{service=\"nginx\"} |= \"replica=api/\"",
           "queryType": "range",
           "refId": "B"
         }
