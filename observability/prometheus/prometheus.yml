@@ -13,6 +13,25 @@ scrape_configs:
       - names: ["backend"]
         type: A
         port: 8080
+    metric_relabel_configs:
+      - source_labels: [exported_instance]
+        regex: .+
+        action: drop
+      - source_labels: [__name__, replica]
+        regex: "http_.+;"
+        action: drop
+      - source_labels: [__name__, replica]
+        regex: "http_.+;(.+)"
+        target_label: instance
+        replacement: $1
+        action: replace
+      - source_labels: [__name__, instance]
+        regex: "http_.+;(?:[0-9]{1,3}\\.){3}[0-9]{1,3}:.+"
+        action: drop
+      - regex: exported_instance
+        action: labeldrop
+      - regex: replica
+        action: labeldrop
 
   - job_name: nginx
     static_configs:

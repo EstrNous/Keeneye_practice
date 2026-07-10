@@ -6,7 +6,17 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "icon": "bolt",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": true,
+      "title": "Explore Loki",
+      "type": "link",
+      "url": "/explore?orgId=1&left=%7B%22datasource%22:%22loki%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22expr%22:%22%7Bservice%3D%5C%22backend%5C%22%7D%20%7C%20json%22,%22queryType%22:%22range%22%7D%5D,%22range%22:%7B%22from%22:%22now-15m%22,%22to%22:%22now%22%7D%7D"
+    }
+  ],
   "panels": [
     {
       "datasource": {
@@ -34,12 +44,16 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total[5m])) by (method, status, replica)",
-          "legendFormat": "{{replica}} {{method}} {{status}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(http_requests_total{job=\"backend\", instance=~\"api/backend_.+\", path!=\"/metrics\"}[5m])) by (instance, path)",
+          "legendFormat": "{{instance}} {{path}}",
           "refId": "A"
         }
       ],
-      "title": "HTTP RPS (backend)",
+      "title": "HTTP RPS по репликам (без scrape /metrics)",
       "type": "timeseries"
     },
     {
@@ -62,8 +76,12 @@
       "id": 2,
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, replica))",
-          "legendFormat": "{{replica}} p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"backend\", instance=~\"api/backend_.+\"}[5m])) by (le, instance))",
+          "legendFormat": "{{instance}} p95",
           "refId": "A"
         }
       ],
@@ -83,13 +101,36 @@
       },
       "id": 3,
       "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
         "showTime": true,
-        "sortOrder": "Descending"
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
       },
+      "pluginVersion": "11.6.0",
       "targets": [
         {
-          "expr": "{service=~\"backend|nginx\"}",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "{service=\"backend\"} | json | line_format \"{{.instance}} {{.method}} {{.path}} {{.status}} {{.latency}}\"",
+          "queryType": "range",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "{service=\"nginx\"} != \"/stub_status\"",
+          "queryType": "range",
+          "refId": "B"
         }
       ],
       "title": "Backend и nginx логи",
@@ -109,5 +150,5 @@
   "timezone": "browser",
   "title": "Keeneye Overview",
   "uid": "keeneye-overview",
-  "version": 1
+  "version": 3
 }
