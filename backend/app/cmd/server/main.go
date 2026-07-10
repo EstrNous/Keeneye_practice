@@ -92,8 +92,10 @@ func main() {
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
+	_ = r.SetTrustedProxies([]string{"127.0.0.1", "10.0.0.0/8", "172.16.0.0/12"})
 	r.Use(gin.Recovery())
 	r.Use(middleware.RequestID())
+	r.Use(middleware.InstanceID())
 	r.Use(httpLogMiddleware(logger))
 	r.Use(middleware.ErrorHandler())
 
@@ -186,6 +188,7 @@ func httpLogMiddleware(logger *slog.Logger) gin.HandlerFunc {
 		path := c.Request.URL.Path
 		c.Next()
 		logger.Info("http request",
+			"instance", c.GetString("instanceID"),
 			"request_id", c.GetString("requestID"),
 			"method", c.Request.Method,
 			"path", path,

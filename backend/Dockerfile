@@ -18,8 +18,10 @@ RUN apk update && apk add --no-cache tzdata curl
 WORKDIR /root/
 
 COPY --from=builder /keeneye_app .
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8080/healthz || exit 1
-CMD ["./keeneye_app"]
+ENTRYPOINT ["/entrypoint.sh"]

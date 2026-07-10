@@ -22,9 +22,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: keeneye_backend
-    ports:
-      - "${BACKEND_PORT}:8080"
     environment:
       - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@postgres_db:5432/${DB_NAME}?sslmode=disable
       - JWT_SECRET=${JWT_SECRET}
@@ -37,6 +34,20 @@ services:
     depends_on:
       postgres_db:
         condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - app-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: keeneye_nginx
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
     networks:
       - app-network
 

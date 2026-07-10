@@ -7,16 +7,17 @@ endif
 
 DB_NAME ?= test
 BACKEND_PORT ?= 8080
+NGINX_PORT ?= 80
 
-.PHONY: env up down down-v reset-db restart logs logs-backend logs-db ps health db-shell build test test-cover test-docker sqlc mocks lint rebuild
+.PHONY: env up down down-v reset-db restart logs logs-backend logs-db logs-nginx ps health db-shell build test test-cover test-docker sqlc mocks lint rebuild route-test
 
 env:
 	powershell -NoProfile -Command "if (-not (Test-Path '$(ENV_FILE)')) { Copy-Item '.env.example' '$(ENV_FILE)'; Write-Host 'Created $(ENV_FILE) from .env.example' }"
 
 up: env
-	$(COMPOSE) up --build -d
-	@echo Waiting for backend health...
-	powershell -NoProfile -Command "for ($$i=0; $$i -lt 30; $$i++) { try { $$r = Invoke-RestMethod -Uri http://localhost:$(BACKEND_PORT)/healthz -TimeoutSec 2; if ($$r.status -eq 'up') { Write-Host 'Backend is up'; exit 0 } } catch {} Start-Sleep -Seconds 2 }; Write-Host 'Backend not ready yet - check: make logs-backend'; exit 1"
+	$(COMPOSE) up --build -d --scale backend=2
+	@echo Waiting for nginx health...
+	powershell -NoProfile -Command "for ($$i=0; $$i -lt 30; $$i++) { try { $$r = Invoke-RestMethod -Uri http://localhost:$(NGINX_PORT)/healthz -TimeoutSec 2; if ($$r.status -eq 'up') { Write-Host 'Backend is up via nginx'; exit 0 } } catch {} Start-Sleep -Seconds 2 }; Write-Host 'Backend not ready yet - check: make logs-nginx'; exit 1"
 
 down:
 	$(COMPOSE) down
@@ -27,16 +28,19 @@ down-v:
 reset-db: down-v up
 
 restart:
-	$(COMPOSE) restart backend
+	$(COMPOSE) restart backend nginx
 
 rebuild: env
-	$(COMPOSE) up --build -d backend
+	$(COMPOSE) up --build -d --scale backend=2
 
 logs:
 	$(COMPOSE) logs -f
 
 logs-backend:
 	$(COMPOSE) logs -f backend
+
+logs-nginx:
+	$(COMPOSE) logs -f nginx
 
 logs-db:
 	$(COMPOSE) logs -f postgres_db
@@ -45,7 +49,10 @@ ps:
 	$(COMPOSE) ps
 
 health:
-	powershell -NoProfile -Command "Invoke-RestMethod -Uri http://localhost:$(BACKEND_PORT)/healthz | ConvertTo-Json"
+	powershell -NoProfile -Command "Invoke-RestMethod -Uri http://localhost:$(NGINX_PORT)/healthz | ConvertTo-Json"
+
+route-test:
+	powershell -NoProfile -Command "1..10 | ForEach-Object { Invoke-RestMethod -Uri http://localhost:$(NGINX_PORT)/healthz | Out-Null }; Write-Host 'Sent 10 requests. Check replica routing with: make logs-nginx'"
 
 db-shell:
 	docker exec -it keeneye_postgres psql -U postgres -d $(DB_NAME)
