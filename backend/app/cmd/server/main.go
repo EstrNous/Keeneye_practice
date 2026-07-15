@@ -13,12 +13,16 @@ import (
 
 	"keeneye_practice/app/internal/config"
 	"keeneye_practice/app/internal/db"
+	"keeneye_practice/app/internal/domain"
 	"keeneye_practice/app/internal/handlers"
+	kafkaretry "keeneye_practice/app/internal/kafka"
+	"keeneye_practice/app/internal/mail"
 	"keeneye_practice/app/internal/middleware"
 	"keeneye_practice/app/internal/repository"
 	"keeneye_practice/app/internal/seed"
 	"keeneye_practice/app/internal/service"
 	"keeneye_practice/app/internal/validators"
+	"keeneye_practice/app/internal/worker"
 	"keeneye_practice/migrations"
 
 	"github.com/gin-gonic/gin"
@@ -67,10 +71,25 @@ func main() {
 	groupRepo := repository.NewPostgresGroupRepository(queries)
 	studentRepo := repository.NewPostgresStudentRepository(queries, dbPool)
 	teacherRepo := repository.NewPostgresTeacherRepository(queries, dbPool)
+	regRepo := repository.NewPostgresRegistrationRepository(queries, dbPool)
 
 	studentSvc := service.NewStudentService(studentRepo, authSvc, groupRepo)
 	teacherSvc := service.NewTeacherService(teacherRepo)
 	groupSvc := service.NewGroupService(groupRepo)
+
+	mailer := buildMailer(cfg)
+
+	retryHolder := &emailRetryHolder{}
+	var retryBackend domain.EmailRetryBackend
+	switch cfg.EmailRetryBackend {
+	case config.EmailRetryBackendKafka:
+		retryBackend = kafkaretry.NewEmailRetryBackend(cfg, regRepo, retryHolder)
+	default:
+		retryBackend = worker.NewEmailRetryWorker(regRepo, retryHolder, cfg)
+	}
+
+	regSvc := service.NewRegistrationService(regRepo, mailer, retryBackend, cfg)
+	retryHolder.resender = regSvc
 
 	if cfg.SeedDevData {
 		if err := seed.DevData(ctx, queries, authSvc); err != nil {
@@ -86,10 +105,19 @@ func main() {
 		}
 	}
 
+	expirationWorker := worker.NewExpirationWorker(regRepo, cfg)
+	go expirationWorker.Run(ctx)
+	go func() {
+		if err := retryBackend.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("email retry backend stopped", "error", err)
+		}
+	}()
+
 	authHandler := handlers.NewAuthHandler(authSvc)
 	studentHandler := handlers.NewStudentHandler(studentSvc)
 	teacherHandler := handlers.NewTeacherHandler(teacherSvc)
 	groupHandler := handlers.NewGroupHandler(groupSvc)
+	regHandler := handlers.NewRegistrationHandler(regSvc)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -106,6 +134,8 @@ func main() {
 		auth.POST("/login", authHandler.Login)
 		auth.POST("/register", authHandler.Register)
 		auth.POST("/refresh", authHandler.Refresh)
+		auth.GET("/complete-registration", regHandler.PreviewComplete)
+		auth.POST("/complete-registration", regHandler.CompleteRegistration)
 	}
 
 	api := r.Group("/api/v1")
@@ -136,6 +166,12 @@ func main() {
 			groups.GET("", middleware.RequireRoles("admin", "teacher"), groupHandler.List)
 			groups.POST("", middleware.RequireRoles("admin"), groupHandler.Create)
 		}
+
+		registration := api.Group("/registration-requests")
+		{
+			registration.POST("/batch", middleware.RequireRoles("admin"), regHandler.UploadBatch)
+			registration.GET("/batch/:id", middleware.RequireRoles("admin"), regHandler.GetBatch)
+		}
 	}
 
 	r.GET("/healthz", func(c *gin.Context) {
@@ -151,7 +187,7 @@ func main() {
 	srv := &http.Server{Addr: ":8080", Handler: r}
 
 	go func() {
-		logger.Info("server listening", "addr", ":8080")
+		logger.Info("server listening", "addr", ":8080", "email_retry_backend", cfg.EmailRetryBackend)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("listen error", "error", err)
 		}
@@ -166,6 +202,24 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("forced shutdown", "error", err)
 	}
+}
+
+func buildMailer(cfg *config.Config) mail.Mailer {
+	if cfg.MailerType == "smtp" && cfg.SMTPHost != "" {
+		return mail.NewSMTPMailer(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPassword, cfg.SMTPFrom)
+	}
+	return mail.NewLogMailer()
+}
+
+type emailRetryHolder struct {
+	resender domain.EmailResender
+}
+
+func (h *emailRetryHolder) ResendEmail(ctx context.Context, msg domain.EmailRetryMessage) error {
+	if h.resender == nil {
+		return errors.New("registration service not initialized")
+	}
+	return h.resender.ResendEmail(ctx, msg)
 }
 
 func runMigrations(dbURL string) error {

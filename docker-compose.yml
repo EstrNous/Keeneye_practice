@@ -31,6 +31,17 @@ services:
       - APP_ENV=${APP_ENV:-development}
       - SEED_DEV_DATA=${SEED_DEV_DATA:-true}
       - DEV_SEED_PASSWORD=${DEV_SEED_PASSWORD:-DevPassword1!}
+      - REGISTRATION_LINK_TTL=${REGISTRATION_LINK_TTL:-24h}
+      - REGISTRATION_BASE_URL=${REGISTRATION_BASE_URL:-http://localhost}
+      - EMAIL_RETRY_BACKEND=${EMAIL_RETRY_BACKEND:-worker}
+      - KAFKA_BROKERS=${KAFKA_BROKERS:-kafka:9092}
+      - KAFKA_EMAIL_TOPIC=${KAFKA_EMAIL_TOPIC:-registration-email-retry}
+      - KAFKA_CONSUMER_GROUP=${KAFKA_CONSUMER_GROUP:-registration-email}
+      - EMAIL_RETRY_MAX_ATTEMPTS=${EMAIL_RETRY_MAX_ATTEMPTS:-5}
+      - EMAIL_RETRY_SIMULATE_FAILURE_RATE=${EMAIL_RETRY_SIMULATE_FAILURE_RATE:-0.3}
+      - EXPIRATION_WORKER_INTERVAL=${EXPIRATION_WORKER_INTERVAL:-30s}
+      - EMAIL_RETRY_WORKER_INTERVAL=${EMAIL_RETRY_WORKER_INTERVAL:-15s}
+      - MAILER_TYPE=${MAILER_TYPE:-log}
     depends_on:
       postgres_db:
         condition: service_healthy
@@ -128,6 +139,23 @@ services:
     depends_on:
       - prometheus
       - loki
+    networks:
+      - app-network
+
+  kafka:
+    image: bitnami/kafka:3.9
+    container_name: keeneye_kafka
+    environment:
+      KAFKA_CFG_NODE_ID: 0
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
     networks:
       - app-network
 
