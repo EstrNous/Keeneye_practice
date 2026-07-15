@@ -60,9 +60,20 @@ func main() {
 	}
 	defer dbPool.Close()
 
-	if err := runMigrations(cfg.DatabaseURL); err != nil {
-		logger.Error("migrations failed", "error", err)
-		os.Exit(1)
+	if os.Getenv("MIGRATE_ONLY") == "1" {
+		if err := runMigrations(cfg.DatabaseURL); err != nil {
+			logger.Error("migrations failed", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("migrations completed")
+		os.Exit(0)
+	}
+
+	if os.Getenv("SKIP_MIGRATIONS") != "1" {
+		if err := runMigrations(cfg.DatabaseURL); err != nil {
+			logger.Error("migrations failed", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	queries := db.New(dbPool)
