@@ -9,6 +9,7 @@ var (
 	ErrValidation   = errors.New("validation failed")
 	ErrConflict     = errors.New("conflict")
 	ErrInternal     = errors.New("internal error")
+	ErrGone         = errors.New("gone")
 )
 
 type ValidationError struct {

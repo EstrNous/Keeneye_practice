@@ -11,6 +11,93 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type RegistrationEmailOutboxStatus string
+
+const (
+	RegistrationEmailOutboxStatusPending RegistrationEmailOutboxStatus = "pending"
+	RegistrationEmailOutboxStatusSent    RegistrationEmailOutboxStatus = "sent"
+	RegistrationEmailOutboxStatusFailed  RegistrationEmailOutboxStatus = "failed"
+)
+
+func (e *RegistrationEmailOutboxStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = RegistrationEmailOutboxStatus(s)
+	case string:
+		*e = RegistrationEmailOutboxStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for RegistrationEmailOutboxStatus: %T", src)
+	}
+	return nil
+}
+
+type NullRegistrationEmailOutboxStatus struct {
+	RegistrationEmailOutboxStatus RegistrationEmailOutboxStatus
+	Valid                         bool // Valid is true if RegistrationEmailOutboxStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullRegistrationEmailOutboxStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.RegistrationEmailOutboxStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.RegistrationEmailOutboxStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullRegistrationEmailOutboxStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.RegistrationEmailOutboxStatus), nil
+}
+
+type RegistrationRequestStatus string
+
+const (
+	RegistrationRequestStatusPending   RegistrationRequestStatus = "pending"
+	RegistrationRequestStatusCompleted RegistrationRequestStatus = "completed"
+	RegistrationRequestStatusRevoked   RegistrationRequestStatus = "revoked"
+	RegistrationRequestStatusFailed    RegistrationRequestStatus = "failed"
+)
+
+func (e *RegistrationRequestStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = RegistrationRequestStatus(s)
+	case string:
+		*e = RegistrationRequestStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for RegistrationRequestStatus: %T", src)
+	}
+	return nil
+}
+
+type NullRegistrationRequestStatus struct {
+	RegistrationRequestStatus RegistrationRequestStatus
+	Valid                     bool // Valid is true if RegistrationRequestStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullRegistrationRequestStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.RegistrationRequestStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.RegistrationRequestStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullRegistrationRequestStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.RegistrationRequestStatus), nil
+}
+
 type UserRole string
 
 const (
@@ -33,9 +120,10 @@ func (e *UserRole) Scan(src interface{}) error {
 
 type NullUserRole struct {
 	UserRole UserRole
-	Valid    bool
+	Valid    bool // Valid is true if UserRole is not NULL
 }
 
+// Scan implements the Scanner interface.
 func (ns *NullUserRole) Scan(value interface{}) error {
 	if value == nil {
 		ns.UserRole, ns.Valid = "", false
@@ -45,6 +133,7 @@ func (ns *NullUserRole) Scan(value interface{}) error {
 	return ns.UserRole.Scan(value)
 }
 
+// Value implements the driver Valuer interface.
 func (ns NullUserRole) Value() (driver.Value, error) {
 	if !ns.Valid {
 		return nil, nil
@@ -64,6 +153,41 @@ type RefreshToken struct {
 	ExpiresAt pgtype.Timestamp
 	RevokedAt pgtype.Timestamp
 	CreatedAt pgtype.Timestamp
+}
+
+type RegistrationBatch struct {
+	ID           pgtype.UUID
+	CreatedBy    int32
+	TotalRows    int32
+	SuccessCount int32
+	ErrorCount   int32
+	CreatedAt    pgtype.Timestamp
+}
+
+type RegistrationEmailOutbox struct {
+	ID        int32
+	RequestID int32
+	Status    RegistrationEmailOutboxStatus
+	Attempts  int32
+	LastError pgtype.Text
+	CreatedAt pgtype.Timestamp
+	UpdatedAt pgtype.Timestamp
+}
+
+type RegistrationRequest struct {
+	ID          int32
+	BatchID     pgtype.UUID
+	Email       string
+	Fio         string
+	Role        UserRole
+	GroupID     pgtype.Int4
+	GroupName   pgtype.Text
+	InviteToken string
+	TokenHash   string
+	Status      RegistrationRequestStatus
+	ExpiresAt   pgtype.Timestamp
+	CompletedAt pgtype.Timestamp
+	CreatedAt   pgtype.Timestamp
 }
 
 type Student struct {

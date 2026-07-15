@@ -23,7 +23,7 @@ WHERE s.group_id = $1;
 -- name: GetClassmates :many
 SELECT s.id, s.fio, s.user_id, s.group_id, g.name as group_name FROM students s
 LEFT JOIN groups g ON s.group_id = g.id
-WHERE s.group_id = (SELECT group_id FROM students WHERE id = $1);
+WHERE s.group_id = (SELECT group_id FROM students WHERE students.id = $1);
 
 -- name: GetStudentsByTeacherGroups :many
 SELECT s.id, s.fio, s.user_id, s.group_id, g.name as group_name FROM students s
@@ -116,4 +116,94 @@ UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP
 WHERE user_id = $1 AND revoked_at IS NULL;
 
 -- name: CountUsersByEmail :one
-SELECT COUNT(*)::bigint FROM users WHERE email = $1;
+SELECT COUNT(*)::bigint FROM users WHERE LOWER(email) = LOWER($1);
+
+-- name: CreateRegistrationBatch :one
+INSERT INTO registration_batches (id, created_by, total_rows, success_count, error_count)
+VALUES ($1, $2, $3, $4, $5) RETURNING *;
+
+-- name: UpdateRegistrationBatchCounts :exec
+UPDATE registration_batches
+SET success_count = $2, error_count = $3
+WHERE id = $1;
+
+-- name: GetRegistrationBatch :one
+SELECT * FROM registration_batches WHERE id = $1 LIMIT 1;
+
+-- name: CreateRegistrationRequest :one
+INSERT INTO registration_requests (
+    batch_id, email, fio, role, group_id, group_name, invite_token, token_hash, expires_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *;
+
+-- name: CreateRegistrationEmailOutbox :one
+INSERT INTO registration_email_outbox (request_id, status)
+VALUES ($1, 'pending') RETURNING *;
+
+-- name: GetRegistrationRequestByTokenHash :one
+SELECT * FROM registration_requests WHERE token_hash = $1 LIMIT 1;
+
+-- name: GetRegistrationRequestByTokenHashForUpdate :one
+SELECT * FROM registration_requests
+WHERE token_hash = $1
+FOR UPDATE;
+
+-- name: GetPendingRegistrationRequestByEmail :one
+SELECT * FROM registration_requests
+WHERE LOWER(email) = LOWER($1) AND status = 'pending'
+LIMIT 1;
+
+-- name: CompleteRegistrationRequest :exec
+UPDATE registration_requests
+SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND status = 'pending';
+
+-- name: RevokeExpiredRegistrationRequests :many
+WITH expired AS (
+    SELECT id FROM registration_requests
+    WHERE status = 'pending' AND expires_at < CURRENT_TIMESTAMP
+    FOR UPDATE SKIP LOCKED
+    LIMIT $1
+)
+UPDATE registration_requests AS rr
+SET status = 'revoked'
+FROM expired AS e
+WHERE rr.id = e.id
+RETURNING rr.id;
+
+-- name: ListRegistrationRequestsByBatch :many
+SELECT * FROM registration_requests
+WHERE batch_id = $1
+ORDER BY id;
+
+-- name: GetRegistrationEmailOutboxByIDForUpdate :one
+SELECT * FROM registration_email_outbox
+WHERE id = $1
+FOR UPDATE;
+
+-- name: GetRegistrationRequestByID :one
+SELECT * FROM registration_requests WHERE id = $1 LIMIT 1;
+
+-- name: MarkRegistrationEmailOutboxSent :exec
+UPDATE registration_email_outbox
+SET status = 'sent', updated_at = CURRENT_TIMESTAMP
+WHERE id = $1;
+
+-- name: MarkRegistrationEmailOutboxFailed :exec
+UPDATE registration_email_outbox
+SET status = 'failed', attempts = attempts + 1, last_error = $2, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1;
+
+-- name: MarkRegistrationEmailOutboxDead :exec
+UPDATE registration_email_outbox
+SET status = 'failed', attempts = attempts + 1, last_error = $2, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1;
+
+-- name: ListRegistrationEmailOutboxForRetry :many
+SELECT o.* FROM registration_email_outbox o
+JOIN registration_requests r ON r.id = o.request_id
+WHERE o.status IN ('pending', 'failed')
+  AND o.attempts < $1
+  AND r.status = 'pending'
+ORDER BY o.updated_at
+LIMIT $2
+FOR UPDATE OF o SKIP LOCKED;

@@ -77,7 +77,7 @@ func (r *postgresStudentRepository) ListAll(ctx context.Context) ([]domain.Stude
 }
 
 func (r *postgresStudentRepository) ListByGroupID(ctx context.Context, groupID int32) ([]domain.Student, error) {
-	rows, err := r.q.GetStudentsByGroupID(ctx, groupID)
+	rows, err := r.q.GetStudentsByGroupID(ctx, pgtype.Int4{Int32: groupID, Valid: true})
 	if err != nil {
 		return nil, apperrors.MapPG(err)
 	}

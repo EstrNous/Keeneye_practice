@@ -44,15 +44,26 @@ func (q *Queries) CheckTeacherHasGroup(ctx context.Context, arg CheckTeacherHasG
 	return exists, err
 }
 
-const countUsersByEmail = `-- name: CountUsersByEmail :one
-SELECT COUNT(*)::bigint FROM users WHERE email = $1
+const completeRegistrationRequest = `-- name: CompleteRegistrationRequest :exec
+UPDATE registration_requests
+SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND status = 'pending'
 `
 
-func (q *Queries) CountUsersByEmail(ctx context.Context, email string) (int64, error) {
-	row := q.db.QueryRow(ctx, countUsersByEmail, email)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+func (q *Queries) CompleteRegistrationRequest(ctx context.Context, id int32) error {
+	_, err := q.db.Exec(ctx, completeRegistrationRequest, id)
+	return err
+}
+
+const countUsersByEmail = `-- name: CountUsersByEmail :one
+SELECT COUNT(*)::bigint FROM users WHERE LOWER(email) = LOWER($1)
+`
+
+func (q *Queries) CountUsersByEmail(ctx context.Context, lower string) (int64, error) {
+	row := q.db.QueryRow(ctx, countUsersByEmail, lower)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const createGroup = `-- name: CreateGroup :one
@@ -61,17 +72,6 @@ INSERT INTO groups (name) VALUES ($1) RETURNING id, name
 
 func (q *Queries) CreateGroup(ctx context.Context, name string) (Group, error) {
 	row := q.db.QueryRow(ctx, createGroup, name)
-	var i Group
-	err := row.Scan(&i.ID, &i.Name)
-	return i, err
-}
-
-const getGroupByName = `-- name: GetGroupByName :one
-SELECT id, name FROM groups WHERE name = $1 LIMIT 1
-`
-
-func (q *Queries) GetGroupByName(ctx context.Context, name string) (Group, error) {
-	row := q.db.QueryRow(ctx, getGroupByName, name)
 	var i Group
 	err := row.Scan(&i.ID, &i.Name)
 	return i, err
@@ -102,6 +102,108 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 	return i, err
 }
 
+const createRegistrationBatch = `-- name: CreateRegistrationBatch :one
+INSERT INTO registration_batches (id, created_by, total_rows, success_count, error_count)
+VALUES ($1, $2, $3, $4, $5) RETURNING id, created_by, total_rows, success_count, error_count, created_at
+`
+
+type CreateRegistrationBatchParams struct {
+	ID           pgtype.UUID
+	CreatedBy    int32
+	TotalRows    int32
+	SuccessCount int32
+	ErrorCount   int32
+}
+
+func (q *Queries) CreateRegistrationBatch(ctx context.Context, arg CreateRegistrationBatchParams) (RegistrationBatch, error) {
+	row := q.db.QueryRow(ctx, createRegistrationBatch,
+		arg.ID,
+		arg.CreatedBy,
+		arg.TotalRows,
+		arg.SuccessCount,
+		arg.ErrorCount,
+	)
+	var i RegistrationBatch
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedBy,
+		&i.TotalRows,
+		&i.SuccessCount,
+		&i.ErrorCount,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createRegistrationEmailOutbox = `-- name: CreateRegistrationEmailOutbox :one
+INSERT INTO registration_email_outbox (request_id, status)
+VALUES ($1, 'pending') RETURNING id, request_id, status, attempts, last_error, created_at, updated_at
+`
+
+func (q *Queries) CreateRegistrationEmailOutbox(ctx context.Context, requestID int32) (RegistrationEmailOutbox, error) {
+	row := q.db.QueryRow(ctx, createRegistrationEmailOutbox, requestID)
+	var i RegistrationEmailOutbox
+	err := row.Scan(
+		&i.ID,
+		&i.RequestID,
+		&i.Status,
+		&i.Attempts,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createRegistrationRequest = `-- name: CreateRegistrationRequest :one
+INSERT INTO registration_requests (
+    batch_id, email, fio, role, group_id, group_name, invite_token, token_hash, expires_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, batch_id, email, fio, role, group_id, group_name, invite_token, token_hash, status, expires_at, completed_at, created_at
+`
+
+type CreateRegistrationRequestParams struct {
+	BatchID     pgtype.UUID
+	Email       string
+	Fio         string
+	Role        UserRole
+	GroupID     pgtype.Int4
+	GroupName   pgtype.Text
+	InviteToken string
+	TokenHash   string
+	ExpiresAt   pgtype.Timestamp
+}
+
+func (q *Queries) CreateRegistrationRequest(ctx context.Context, arg CreateRegistrationRequestParams) (RegistrationRequest, error) {
+	row := q.db.QueryRow(ctx, createRegistrationRequest,
+		arg.BatchID,
+		arg.Email,
+		arg.Fio,
+		arg.Role,
+		arg.GroupID,
+		arg.GroupName,
+		arg.InviteToken,
+		arg.TokenHash,
+		arg.ExpiresAt,
+	)
+	var i RegistrationRequest
+	err := row.Scan(
+		&i.ID,
+		&i.BatchID,
+		&i.Email,
+		&i.Fio,
+		&i.Role,
+		&i.GroupID,
+		&i.GroupName,
+		&i.InviteToken,
+		&i.TokenHash,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createStudent = `-- name: CreateStudent :one
 INSERT INTO students (user_id, group_id, fio)
 VALUES ($1, $2, $3) RETURNING id, fio, user_id, group_id
@@ -116,7 +218,12 @@ type CreateStudentParams struct {
 func (q *Queries) CreateStudent(ctx context.Context, arg CreateStudentParams) (Student, error) {
 	row := q.db.QueryRow(ctx, createStudent, arg.UserID, arg.GroupID, arg.Fio)
 	var i Student
-	err := row.Scan(&i.ID, &i.Fio, &i.UserID, &i.GroupID)
+	err := row.Scan(
+		&i.ID,
+		&i.Fio,
+		&i.UserID,
+		&i.GroupID,
+	)
 	return i, err
 }
 
@@ -149,9 +256,21 @@ type CreateUserParams struct {
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.Email, arg.PasswordHash, arg.Role, arg.PhoneNumber)
+	row := q.db.QueryRow(ctx, createUser,
+		arg.Email,
+		arg.PasswordHash,
+		arg.Role,
+		arg.PhoneNumber,
+	)
 	var i User
-	err := row.Scan(&i.ID, &i.Email, &i.PasswordHash, &i.Role, &i.CreatedAt, &i.PhoneNumber)
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.CreatedAt,
+		&i.PhoneNumber,
+	)
 	return i, err
 }
 
@@ -185,7 +304,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int32) error {
 const getClassmates = `-- name: GetClassmates :many
 SELECT s.id, s.fio, s.user_id, s.group_id, g.name as group_name FROM students s
 LEFT JOIN groups g ON s.group_id = g.id
-WHERE s.group_id = (SELECT group_id FROM students WHERE id = $1)
+WHERE s.group_id = (SELECT group_id FROM students WHERE students.id = $1)
 `
 
 type GetClassmatesRow struct {
@@ -205,12 +324,21 @@ func (q *Queries) GetClassmates(ctx context.Context, id int32) ([]GetClassmatesR
 	var items []GetClassmatesRow
 	for rows.Next() {
 		var i GetClassmatesRow
-		if err := rows.Scan(&i.ID, &i.Fio, &i.UserID, &i.GroupID, &i.GroupName); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Fio,
+			&i.UserID,
+			&i.GroupID,
+			&i.GroupName,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getGroupByID = `-- name: GetGroupByID :one
@@ -224,6 +352,44 @@ func (q *Queries) GetGroupByID(ctx context.Context, id int32) (Group, error) {
 	return i, err
 }
 
+const getGroupByName = `-- name: GetGroupByName :one
+SELECT id, name FROM groups WHERE name = $1 LIMIT 1
+`
+
+func (q *Queries) GetGroupByName(ctx context.Context, name string) (Group, error) {
+	row := q.db.QueryRow(ctx, getGroupByName, name)
+	var i Group
+	err := row.Scan(&i.ID, &i.Name)
+	return i, err
+}
+
+const getPendingRegistrationRequestByEmail = `-- name: GetPendingRegistrationRequestByEmail :one
+SELECT id, batch_id, email, fio, role, group_id, group_name, invite_token, token_hash, status, expires_at, completed_at, created_at FROM registration_requests
+WHERE LOWER(email) = LOWER($1) AND status = 'pending'
+LIMIT 1
+`
+
+func (q *Queries) GetPendingRegistrationRequestByEmail(ctx context.Context, lower string) (RegistrationRequest, error) {
+	row := q.db.QueryRow(ctx, getPendingRegistrationRequestByEmail, lower)
+	var i RegistrationRequest
+	err := row.Scan(
+		&i.ID,
+		&i.BatchID,
+		&i.Email,
+		&i.Fio,
+		&i.Role,
+		&i.GroupID,
+		&i.GroupName,
+		&i.InviteToken,
+		&i.TokenHash,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getRefreshTokenByHash = `-- name: GetRefreshTokenByHash :one
 SELECT id, user_id, token_hash, expires_at, revoked_at, created_at FROM refresh_tokens
 WHERE token_hash = $1 AND revoked_at IS NULL
@@ -233,7 +399,130 @@ LIMIT 1
 func (q *Queries) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error) {
 	row := q.db.QueryRow(ctx, getRefreshTokenByHash, tokenHash)
 	var i RefreshToken
-	err := row.Scan(&i.ID, &i.UserID, &i.TokenHash, &i.ExpiresAt, &i.RevokedAt, &i.CreatedAt)
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.TokenHash,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getRegistrationBatch = `-- name: GetRegistrationBatch :one
+SELECT id, created_by, total_rows, success_count, error_count, created_at FROM registration_batches WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetRegistrationBatch(ctx context.Context, id pgtype.UUID) (RegistrationBatch, error) {
+	row := q.db.QueryRow(ctx, getRegistrationBatch, id)
+	var i RegistrationBatch
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedBy,
+		&i.TotalRows,
+		&i.SuccessCount,
+		&i.ErrorCount,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getRegistrationEmailOutboxByIDForUpdate = `-- name: GetRegistrationEmailOutboxByIDForUpdate :one
+SELECT id, request_id, status, attempts, last_error, created_at, updated_at FROM registration_email_outbox
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) GetRegistrationEmailOutboxByIDForUpdate(ctx context.Context, id int32) (RegistrationEmailOutbox, error) {
+	row := q.db.QueryRow(ctx, getRegistrationEmailOutboxByIDForUpdate, id)
+	var i RegistrationEmailOutbox
+	err := row.Scan(
+		&i.ID,
+		&i.RequestID,
+		&i.Status,
+		&i.Attempts,
+		&i.LastError,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getRegistrationRequestByID = `-- name: GetRegistrationRequestByID :one
+SELECT id, batch_id, email, fio, role, group_id, group_name, invite_token, token_hash, status, expires_at, completed_at, created_at FROM registration_requests WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetRegistrationRequestByID(ctx context.Context, id int32) (RegistrationRequest, error) {
+	row := q.db.QueryRow(ctx, getRegistrationRequestByID, id)
+	var i RegistrationRequest
+	err := row.Scan(
+		&i.ID,
+		&i.BatchID,
+		&i.Email,
+		&i.Fio,
+		&i.Role,
+		&i.GroupID,
+		&i.GroupName,
+		&i.InviteToken,
+		&i.TokenHash,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getRegistrationRequestByTokenHash = `-- name: GetRegistrationRequestByTokenHash :one
+SELECT id, batch_id, email, fio, role, group_id, group_name, invite_token, token_hash, status, expires_at, completed_at, created_at FROM registration_requests WHERE token_hash = $1 LIMIT 1
+`
+
+func (q *Queries) GetRegistrationRequestByTokenHash(ctx context.Context, tokenHash string) (RegistrationRequest, error) {
+	row := q.db.QueryRow(ctx, getRegistrationRequestByTokenHash, tokenHash)
+	var i RegistrationRequest
+	err := row.Scan(
+		&i.ID,
+		&i.BatchID,
+		&i.Email,
+		&i.Fio,
+		&i.Role,
+		&i.GroupID,
+		&i.GroupName,
+		&i.InviteToken,
+		&i.TokenHash,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getRegistrationRequestByTokenHashForUpdate = `-- name: GetRegistrationRequestByTokenHashForUpdate :one
+SELECT id, batch_id, email, fio, role, group_id, group_name, invite_token, token_hash, status, expires_at, completed_at, created_at FROM registration_requests
+WHERE token_hash = $1
+FOR UPDATE
+`
+
+func (q *Queries) GetRegistrationRequestByTokenHashForUpdate(ctx context.Context, tokenHash string) (RegistrationRequest, error) {
+	row := q.db.QueryRow(ctx, getRegistrationRequestByTokenHashForUpdate, tokenHash)
+	var i RegistrationRequest
+	err := row.Scan(
+		&i.ID,
+		&i.BatchID,
+		&i.Email,
+		&i.Fio,
+		&i.Role,
+		&i.GroupID,
+		&i.GroupName,
+		&i.InviteToken,
+		&i.TokenHash,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+	)
 	return i, err
 }
 
@@ -254,7 +543,13 @@ type GetStudentByIDRow struct {
 func (q *Queries) GetStudentByID(ctx context.Context, id int32) (GetStudentByIDRow, error) {
 	row := q.db.QueryRow(ctx, getStudentByID, id)
 	var i GetStudentByIDRow
-	err := row.Scan(&i.ID, &i.Fio, &i.UserID, &i.GroupID, &i.GroupName)
+	err := row.Scan(
+		&i.ID,
+		&i.Fio,
+		&i.UserID,
+		&i.GroupID,
+		&i.GroupName,
+	)
 	return i, err
 }
 
@@ -265,7 +560,12 @@ SELECT id, fio, user_id, group_id FROM students WHERE user_id = $1 LIMIT 1
 func (q *Queries) GetStudentByUserID(ctx context.Context, userID pgtype.Int4) (Student, error) {
 	row := q.db.QueryRow(ctx, getStudentByUserID, userID)
 	var i Student
-	err := row.Scan(&i.ID, &i.Fio, &i.UserID, &i.GroupID)
+	err := row.Scan(
+		&i.ID,
+		&i.Fio,
+		&i.UserID,
+		&i.GroupID,
+	)
 	return i, err
 }
 
@@ -283,7 +583,7 @@ type GetStudentsByGroupIDRow struct {
 	GroupName pgtype.Text
 }
 
-func (q *Queries) GetStudentsByGroupID(ctx context.Context, groupID int32) ([]GetStudentsByGroupIDRow, error) {
+func (q *Queries) GetStudentsByGroupID(ctx context.Context, groupID pgtype.Int4) ([]GetStudentsByGroupIDRow, error) {
 	rows, err := q.db.Query(ctx, getStudentsByGroupID, groupID)
 	if err != nil {
 		return nil, err
@@ -292,12 +592,21 @@ func (q *Queries) GetStudentsByGroupID(ctx context.Context, groupID int32) ([]Ge
 	var items []GetStudentsByGroupIDRow
 	for rows.Next() {
 		var i GetStudentsByGroupIDRow
-		if err := rows.Scan(&i.ID, &i.Fio, &i.UserID, &i.GroupID, &i.GroupName); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Fio,
+			&i.UserID,
+			&i.GroupID,
+			&i.GroupName,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getStudentsByTeacherGroups = `-- name: GetStudentsByTeacherGroups :many
@@ -324,12 +633,21 @@ func (q *Queries) GetStudentsByTeacherGroups(ctx context.Context, teacherID int3
 	var items []GetStudentsByTeacherGroupsRow
 	for rows.Next() {
 		var i GetStudentsByTeacherGroupsRow
-		if err := rows.Scan(&i.ID, &i.Fio, &i.UserID, &i.GroupID, &i.GroupName); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Fio,
+			&i.UserID,
+			&i.GroupID,
+			&i.GroupName,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getTeacherByID = `-- name: GetTeacherByID :one
@@ -349,7 +667,13 @@ type GetTeacherByIDRow struct {
 func (q *Queries) GetTeacherByID(ctx context.Context, id int32) (GetTeacherByIDRow, error) {
 	row := q.db.QueryRow(ctx, getTeacherByID, id)
 	var i GetTeacherByIDRow
-	err := row.Scan(&i.ID, &i.UserID, &i.Fio, &i.Email, &i.PhoneNumber)
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Fio,
+		&i.Email,
+		&i.PhoneNumber,
+	)
 	return i, err
 }
 
@@ -371,7 +695,14 @@ SELECT id, email, password_hash, role, created_at, phone_number FROM users WHERE
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByEmail, email)
 	var i User
-	err := row.Scan(&i.ID, &i.Email, &i.PasswordHash, &i.Role, &i.CreatedAt, &i.PhoneNumber)
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.CreatedAt,
+		&i.PhoneNumber,
+	)
 	return i, err
 }
 
@@ -382,7 +713,14 @@ SELECT id, email, password_hash, role, created_at, phone_number FROM users WHERE
 func (q *Queries) GetUserByID(ctx context.Context, id int32) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
 	var i User
-	err := row.Scan(&i.ID, &i.Email, &i.PasswordHash, &i.Role, &i.CreatedAt, &i.PhoneNumber)
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.CreatedAt,
+		&i.PhoneNumber,
+	)
 	return i, err
 }
 
@@ -408,12 +746,21 @@ func (q *Queries) ListAllStudents(ctx context.Context) ([]ListAllStudentsRow, er
 	var items []ListAllStudentsRow
 	for rows.Next() {
 		var i ListAllStudentsRow
-		if err := rows.Scan(&i.ID, &i.Fio, &i.UserID, &i.GroupID, &i.GroupName); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Fio,
+			&i.UserID,
+			&i.GroupID,
+			&i.GroupName,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listGroups = `-- name: ListGroups :many
@@ -434,7 +781,94 @@ func (q *Queries) ListGroups(ctx context.Context) ([]Group, error) {
 		}
 		items = append(items, i)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRegistrationEmailOutboxForRetry = `-- name: ListRegistrationEmailOutboxForRetry :many
+SELECT o.id, o.request_id, o.status, o.attempts, o.last_error, o.created_at, o.updated_at FROM registration_email_outbox o
+JOIN registration_requests r ON r.id = o.request_id
+WHERE o.status IN ('pending', 'failed')
+  AND o.attempts < $1
+  AND r.status = 'pending'
+ORDER BY o.updated_at
+LIMIT $2
+FOR UPDATE OF o SKIP LOCKED
+`
+
+type ListRegistrationEmailOutboxForRetryParams struct {
+	Attempts int32
+	Limit    int32
+}
+
+func (q *Queries) ListRegistrationEmailOutboxForRetry(ctx context.Context, arg ListRegistrationEmailOutboxForRetryParams) ([]RegistrationEmailOutbox, error) {
+	rows, err := q.db.Query(ctx, listRegistrationEmailOutboxForRetry, arg.Attempts, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RegistrationEmailOutbox
+	for rows.Next() {
+		var i RegistrationEmailOutbox
+		if err := rows.Scan(
+			&i.ID,
+			&i.RequestID,
+			&i.Status,
+			&i.Attempts,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRegistrationRequestsByBatch = `-- name: ListRegistrationRequestsByBatch :many
+SELECT id, batch_id, email, fio, role, group_id, group_name, invite_token, token_hash, status, expires_at, completed_at, created_at FROM registration_requests
+WHERE batch_id = $1
+ORDER BY id
+`
+
+func (q *Queries) ListRegistrationRequestsByBatch(ctx context.Context, batchID pgtype.UUID) ([]RegistrationRequest, error) {
+	rows, err := q.db.Query(ctx, listRegistrationRequestsByBatch, batchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RegistrationRequest
+	for rows.Next() {
+		var i RegistrationRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.BatchID,
+			&i.Email,
+			&i.Fio,
+			&i.Role,
+			&i.GroupID,
+			&i.GroupName,
+			&i.InviteToken,
+			&i.TokenHash,
+			&i.Status,
+			&i.ExpiresAt,
+			&i.CompletedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTeacherGroups = `-- name: ListTeacherGroups :many
@@ -457,7 +891,10 @@ func (q *Queries) ListTeacherGroups(ctx context.Context, teacherID int32) ([]Gro
 		}
 		items = append(items, i)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTeachers = `-- name: ListTeachers :many
@@ -482,12 +919,64 @@ func (q *Queries) ListTeachers(ctx context.Context) ([]ListTeachersRow, error) {
 	var items []ListTeachersRow
 	for rows.Next() {
 		var i ListTeachersRow
-		if err := rows.Scan(&i.ID, &i.UserID, &i.Fio, &i.Email, &i.PhoneNumber); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Fio,
+			&i.Email,
+			&i.PhoneNumber,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markRegistrationEmailOutboxDead = `-- name: MarkRegistrationEmailOutboxDead :exec
+UPDATE registration_email_outbox
+SET status = 'failed', attempts = attempts + 1, last_error = $2, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+`
+
+type MarkRegistrationEmailOutboxDeadParams struct {
+	ID        int32
+	LastError pgtype.Text
+}
+
+func (q *Queries) MarkRegistrationEmailOutboxDead(ctx context.Context, arg MarkRegistrationEmailOutboxDeadParams) error {
+	_, err := q.db.Exec(ctx, markRegistrationEmailOutboxDead, arg.ID, arg.LastError)
+	return err
+}
+
+const markRegistrationEmailOutboxFailed = `-- name: MarkRegistrationEmailOutboxFailed :exec
+UPDATE registration_email_outbox
+SET status = 'failed', attempts = attempts + 1, last_error = $2, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+`
+
+type MarkRegistrationEmailOutboxFailedParams struct {
+	ID        int32
+	LastError pgtype.Text
+}
+
+func (q *Queries) MarkRegistrationEmailOutboxFailed(ctx context.Context, arg MarkRegistrationEmailOutboxFailedParams) error {
+	_, err := q.db.Exec(ctx, markRegistrationEmailOutboxFailed, arg.ID, arg.LastError)
+	return err
+}
+
+const markRegistrationEmailOutboxSent = `-- name: MarkRegistrationEmailOutboxSent :exec
+UPDATE registration_email_outbox
+SET status = 'sent', updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+`
+
+func (q *Queries) MarkRegistrationEmailOutboxSent(ctx context.Context, id int32) error {
+	_, err := q.db.Exec(ctx, markRegistrationEmailOutboxSent, id)
+	return err
 }
 
 const removeTeacherFromGroup = `-- name: RemoveTeacherFromGroup :exec
@@ -514,12 +1003,63 @@ func (q *Queries) RevokeAllUserRefreshTokens(ctx context.Context, userID int32) 
 	return err
 }
 
+const revokeExpiredRegistrationRequests = `-- name: RevokeExpiredRegistrationRequests :many
+WITH expired AS (
+    SELECT id FROM registration_requests
+    WHERE status = 'pending' AND expires_at < CURRENT_TIMESTAMP
+    FOR UPDATE SKIP LOCKED
+    LIMIT $1
+)
+UPDATE registration_requests AS rr
+SET status = 'revoked'
+FROM expired AS e
+WHERE rr.id = e.id
+RETURNING rr.id
+`
+
+func (q *Queries) RevokeExpiredRegistrationRequests(ctx context.Context, limit int32) ([]int32, error) {
+	rows, err := q.db.Query(ctx, revokeExpiredRegistrationRequests, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int32
+	for rows.Next() {
+		var id int32
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const revokeRefreshToken = `-- name: RevokeRefreshToken :exec
 UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE id = $1
 `
 
 func (q *Queries) RevokeRefreshToken(ctx context.Context, id int32) error {
 	_, err := q.db.Exec(ctx, revokeRefreshToken, id)
+	return err
+}
+
+const updateRegistrationBatchCounts = `-- name: UpdateRegistrationBatchCounts :exec
+UPDATE registration_batches
+SET success_count = $2, error_count = $3
+WHERE id = $1
+`
+
+type UpdateRegistrationBatchCountsParams struct {
+	ID           pgtype.UUID
+	SuccessCount int32
+	ErrorCount   int32
+}
+
+func (q *Queries) UpdateRegistrationBatchCounts(ctx context.Context, arg UpdateRegistrationBatchCountsParams) error {
+	_, err := q.db.Exec(ctx, updateRegistrationBatchCounts, arg.ID, arg.SuccessCount, arg.ErrorCount)
 	return err
 }
 

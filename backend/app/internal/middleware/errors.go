@@ -63,6 +63,8 @@ func mapError(err error) (int, dto.ErrorBody) {
 		return http.StatusUnauthorized, dto.ErrorBody{Code: "unauthorized", Message: "unauthorized"}
 	case errors.Is(err, apperrors.ErrConflict):
 		return http.StatusConflict, dto.ErrorBody{Code: "conflict", Message: "resource conflict"}
+	case errors.Is(err, apperrors.ErrGone):
+		return http.StatusGone, dto.ErrorBody{Code: "gone", Message: "resource expired or revoked"}
 	case errors.Is(err, apperrors.ErrValidation):
 		return http.StatusBadRequest, dto.ErrorBody{Code: "validation_error", Message: "validation failed"}
 	default:
